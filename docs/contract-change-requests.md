@@ -37,6 +37,45 @@ Every other event verb splits `.own` / `.any`; delete does not. The consequence
 is that a teen cannot delete an event they created themselves — the matrix has
 to deny delete outright rather than scope it. Split it in v1.1 for symmetry.
 
+### CR-004 · `Conflict.occurrenceRefs` cannot name a shift
+**Raised by:** Conflict Engine Agent (G) · **Status:** deferred, worked around
+
+`work` and `employee` conflicts are about shifts, but `occurrenceRefs` is shaped
+`{ eventId, occurrenceStart }` with no shift-shaped variant. The engine encodes a
+shift as `{ eventId: shift.id, occurrenceStart: shift.startsAt }`, which means a
+consumer that assumes every `eventId` resolves to an `Event` will miss.
+
+**Decision:** deferred. This is a genuine sharp edge and it is now the loudest
+undocumented assumption in the system — every UI or AI consumer of `Conflict`
+has to know it. v1.1 should widen the ref to a discriminated union
+(`{ kind: 'event' | 'shift', id, startsAt }`). Until then it is documented here
+and in the engine.
+
+### CR-005 · `Occurrence` has no location
+**Raised by:** Conflict Engine Agent (G) · **Status:** deferred
+
+`travel` conflicts can therefore only detect time-tightness, not that the two
+events are in different places — so the check is a heuristic and is scored
+`info` rather than `warning`. Carrying `location` onto `Occurrence` in v1.1 would
+make it a real check.
+
+### CR-006 · `RecurrenceRule` has no week-start (WKST)
+**Raised by:** Core Scheduling Agent (F) · **Status:** deferred
+
+Interval anchoring for `every N weeks` depends on which day starts the week.
+The engine defaults to Monday (the RFC 5545 default) so "every 2 weeks on
+Mon+Fri" does not drift with the series start weekday. A household in a
+Sunday-first locale would want the other answer. Add `weekStart?: Weekday` in
+v1.1.
+
+### CR-007 · No signal that expansion hit the cap
+**Raised by:** Core Scheduling Agent (F) · **Status:** deferred
+
+`expandOccurrences` truncates silently at `DEFAULT_MAX_OCCURRENCES` (1000). The
+UI cannot tell a series that genuinely ends from one that was cut off, so it
+cannot show a "more occurrences exist" affordance. Needs either a richer return
+shape or a flag on the last `Occurrence` — both are contract changes.
+
 ---
 
 ## Resolved by orchestrator ruling (no contract change)

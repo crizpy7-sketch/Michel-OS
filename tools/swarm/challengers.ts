@@ -208,9 +208,11 @@ export const unitTests: Challenger = {
   async run(ctx: ChallengeContext): Promise<ChallengeResult> {
     const started = now();
     const findings: Finding[] = [];
+    // A bare directory is resolved as a *module* by the runner, not walked —
+    // that silently reports one synthetic failure and zero passes. Glob.
     const res = await sh(
       'node',
-      ['--test', '--experimental-strip-types', '--test-reporter=tap', 'tests/unit/'],
+      ['--test', '--experimental-strip-types', '--test-reporter=tap', 'tests/**/*.test.ts'],
       { cwd: ctx.repoRoot, timeoutMs: 240_000 },
     );
     const out = res.stdout + res.stderr;
@@ -223,19 +225,23 @@ export const unitTests: Challenger = {
     const fail = num('fail');
 
     if (fail > 0) {
-      // TAP marks each failure as `not ok N - <name>`; attribute by the file it lives in.
-      const failing = [...out.matchAll(/^not ok \d+ - (.+)$/gm)].map((m) => m[1]!.trim());
-      const fileHits = [...out.matchAll(/tests\/unit\/([\w.-]+\.test\.ts)/g)].map((m) => `tests/unit/${m[1]!}`);
-      const uniqueFiles = [...new Set(fileHits)];
-      for (const name of failing.slice(0, 40)) {
-        const file = uniqueFiles.find((f) => out.indexOf(name) > out.indexOf(f)) ?? uniqueFiles[0];
+      // Each TAP failure is `not ok N - <name>` followed by a YAML block whose
+      // `location:` names the source file. Attribute by that, not by guesswork.
+      const blocks = [...out.matchAll(/^\s*not ok \d+ - (.+?)$([\s\S]*?)(?=^\s*(?:not )?ok \d+ - |^1\.\.|\Z)/gm)];
+      for (const b of blocks.slice(0, 40)) {
+        const name = b[1]!.trim();
+        const body = b[2] ?? '';
+        const loc = /location: '([^']+)'/.exec(body)?.[1] ?? '';
+        const rel = loc.replace(ctx.repoRoot + '/', '').replace(/:\d+:\d+$/, '');
+        const failureLine = /error: '([^']*)'/.exec(body)?.[1];
+        const file = rel.endsWith('.ts') ? rel : undefined;
         findings.push({
           challenger: 'unit-tests',
           severity: 'blocking',
           owner: file ? ctx.ownerOf(file) : 'orchestrator',
           file,
           message: `failing test: ${name}`,
-          evidence: name,
+          evidence: failureLine ?? body.trim().slice(0, 400),
         });
       }
       if (findings.length === 0) {
@@ -243,7 +249,7 @@ export const unitTests: Challenger = {
           challenger: 'unit-tests',
           severity: 'blocking',
           owner: 'orchestrator',
-          message: `${fail} test(s) failed but no TAP failure lines could be parsed`,
+          message: `${fail} test(s) failed but no TAP failure block could be parsed`,
           evidence: out.slice(-2000),
         });
       }

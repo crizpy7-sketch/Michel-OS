@@ -22,10 +22,17 @@ function syntheticLoad(n: number): {
   const participants: Array<{ eventId: string; memberId: string; role: 'attendee' | 'responsible' | 'optional' }> = [];
   const members = 6;
   for (let i = 0; i < n; i++) {
-    const dayOffset = Math.floor(i / 8);
-    const start = new Date(Date.UTC(2026, 0, 1, 8, 0, 0) + dayOffset * 86_400_000 + (i % 8) * 3_600_000);
-    const end = new Date(start.getTime() + 90 * 60_000); // 90 min → deliberate overlaps
-    const memberId = `m-${i % members}`;
+    // Eight events per day, but each member's own events sit 30 minutes apart
+    // and run 90 minutes — so every member genuinely collides with themselves.
+    // A load that produces zero conflicts measures the empty path, not the sweep.
+    const perDay = 8;
+    const dayOffset = Math.floor(i / perDay);
+    const slot = i % perDay;
+    const memberId = `m-${slot % members}`;
+    const start = new Date(
+      Date.UTC(2026, 0, 1, 8, 0, 0) + dayOffset * 86_400_000 + Math.floor(slot / members) * 30 * 60_000,
+    );
+    const end = new Date(start.getTime() + 90 * 60_000);
     occurrences.push({
       eventId: `e-${i}`,
       seriesId: null,

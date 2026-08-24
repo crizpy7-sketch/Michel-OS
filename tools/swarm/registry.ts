@@ -23,6 +23,7 @@ export const AGENTS: SwarmAgent[] = [
       '.gitignore',
       'README.md',
       'LICENSE',
+      'tests/integration/**',
       'public/**',
       'art/**',
     ],
