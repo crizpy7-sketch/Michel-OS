@@ -109,6 +109,22 @@ Agents in the same phase run concurrently *because* their `owns` sets are
 disjoint — and the `ownership` challenger fails the build the moment that stops
 being true.
 
+### Last run
+
+```
+9/9 challengers clean · 187 tests passing · 0 blocking findings   GAUNTLET PASSED
+```
+
+All four domain modules were written concurrently by agents that never read each
+other's code. The Phase D integration test — the first time those modules met —
+passed on its first run.
+
+The gauntlet's two blocking catches on its first full pass were both in the
+orchestrator's own harness: a test challenger that reported one synthetic
+failure while 125 real tests sat unrun, and a performance probe whose synthetic
+load produced zero conflicts and so measured the empty path. Fixed in
+`6a7c35c`.
+
 Contract changes requested by agents mid-flight are not applied silently; they
 are recorded in [`docs/contract-change-requests.md`](docs/contract-change-requests.md)
 and batched into a versioned re-freeze.

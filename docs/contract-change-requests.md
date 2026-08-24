@@ -76,6 +76,23 @@ UI cannot tell a series that genuinely ends from one that was cut off, so it
 cannot show a "more occurrences exist" affordance. Needs either a richer return
 shape or a flag on the last `Occurrence` — both are contract changes.
 
+
+### CR-008 · Business scope is not the same tenant as household scope
+**Raised by:** AI Scheduling Agent (H) · **Status:** resolved in the agent's design
+
+The validator brief said a payload `businessId` differing from the request's
+household scope is a cross-tenant escape. But in the frozen contract
+`Business.id` is a distinct UUID from `Household.id`, so a literal reading
+would reject every legitimate Shia Baby action — the brief was wrong, not the
+contract.
+
+**Ruling:** the agent's resolution stands. The default fails closed (a payload
+`businessId` must match the injected scope when no business scope is supplied),
+and an optional `ctx.businessId` supplies the real expected value when the
+caller has resolved it. Business scope is the caller's to establish; the
+validator's job is to refuse anything that does not match what it was told.
+No contract change needed.
+
 ---
 
 ## Resolved by orchestrator ruling (no contract change)
