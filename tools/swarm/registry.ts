@@ -27,6 +27,7 @@ export const AGENTS: SwarmAgent[] = [
       'next.config.ts',
       'postcss.config.mjs',
       'supabase/**',
+      'app/preview/**',
       'public/**',
       'art/**',
     ],
