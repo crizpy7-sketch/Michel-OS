@@ -338,27 +338,40 @@ export const definitionOfDone: Challenger = {
   async run(ctx: ChallengeContext): Promise<ChallengeResult> {
     const started = now();
     const findings: Finding[] = [];
-    const domainFiles = (await walk(join(ctx.repoRoot, 'domains'), ctx.repoRoot)).filter((f) => f.endsWith('.ts'));
+
+    // Look across every source root, not just domains/: UI agents deliver
+    // screens and components, and a challenger that only knows about domain
+    // modules would fail all of them for work they were never asked to do.
+    const sourceFiles: string[] = [];
+    for (const dir of ['domains', 'app', 'components', 'lib']) {
+      sourceFiles.push(...(await walk(join(ctx.repoRoot, dir), ctx.repoRoot)));
+    }
+    const code = sourceFiles.filter((f) => /\.(ts|tsx|css)$/.test(f));
     const testFiles = (await walk(join(ctx.repoRoot, 'tests'), ctx.repoRoot)).filter((f) => f.endsWith('.test.ts'));
     const testCorpus = (
       await Promise.all(testFiles.map((f) => readFile(join(ctx.repoRoot, f), 'utf8').catch(() => '')))
     ).join('\n');
 
+    const ownsFile = (agent: { owns: string[] }, f: string): boolean =>
+      agent.owns.some((p) => (p.endsWith('/**') ? f.startsWith(p.slice(0, -2)) : p === f));
+
     for (const agent of ctx.agents) {
       if (agent.id === 'orchestrator') continue;
-      const delivered = domainFiles.filter((f) => agent.owns.some((p) => (p.endsWith('/**') ? f.startsWith(p.slice(0, -2)) : p === f)));
+      const delivered = code.filter((f) => ownsFile(agent, f));
       if (delivered.length === 0) {
         findings.push({
           challenger: 'definition-of-done',
           severity: 'blocking',
           owner: agent.id,
-          message: `${agent.name} has delivered no domain module yet`,
+          message: `${agent.name} has delivered nothing it owns yet`,
         });
         continue;
       }
       for (const file of delivered) {
         const src = await readFile(join(ctx.repoRoot, file), 'utf8');
-        if (!/^export /m.test(src)) {
+        const isCss = file.endsWith('.css');
+
+        if (!isCss && !/^export /m.test(src)) {
           findings.push({
             challenger: 'definition-of-done',
             severity: 'blocking',
@@ -373,23 +386,30 @@ export const definitionOfDone: Challenger = {
             severity: 'warning',
             owner: agent.id,
             file,
-            message: `module is only ${src.trim().length} bytes — looks like a placeholder`,
+            message: `only ${src.trim().length} bytes — looks like a placeholder`,
           });
         }
-        const base = file.split('/').pop()!.replace('.ts', '');
-        if (!testCorpus.includes(base) && !testFiles.some((t) => t.includes(base))) {
-          findings.push({
-            challenger: 'definition-of-done',
-            severity: 'blocking',
-            owner: agent.id,
-            file,
-            message: `no test file references ${base} — untested code is not done`,
-          });
+
+        // Pure logic must be unit-tested. Screens and components are verified
+        // by the browser probe instead — asserting a React tree in a unit test
+        // mostly re-states the JSX, which is why `--ui` exists.
+        const isPureLogic = file.startsWith('domains/');
+        if (isPureLogic) {
+          const base = file.split('/').pop()!.replace('.ts', '');
+          if (!testCorpus.includes(base) && !testFiles.some((t) => t.includes(base))) {
+            findings.push({
+              challenger: 'definition-of-done',
+              severity: 'blocking',
+              owner: agent.id,
+              file,
+              message: `no test file references ${base} — untested domain logic is not done`,
+            });
+          }
         }
       }
     }
 
-    return result('definition-of-done', started, findings, { domainModules: domainFiles.length, testFiles: testFiles.length });
+    return result('definition-of-done', started, findings, { sourceFiles: code.length, testFiles: testFiles.length });
   },
 };
 
