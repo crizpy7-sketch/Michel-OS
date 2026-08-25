@@ -607,6 +607,19 @@
     transform: translateY(0);
   }
 
+  /* 44px minimum hit area for controls that *paint* smaller than 44px
+     (dense desktop toolbars, small chips). SPEC §8 asks for 44px targets;
+     this satisfies it without forcing 44px of visual weight everywhere. */
+  .mos-tap::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 2.75rem);
+    height: max(100%, 2.75rem);
+    transform: translate(-50%, -50%);
+  }
+
   /* Horizontal overflow is contained, never inflicted on <body>. */
   .mos-scroll-x {
     overflow-x: auto;
