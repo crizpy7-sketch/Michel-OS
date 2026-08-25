@@ -10,7 +10,18 @@
  * Shift, Product, ShoppingItem, Errand, InboxItem, AIAction, AuditLog.
  */
 
-export const CONTRACT_VERSION = '1.0.0-frozen';
+/**
+ * v1.0.1 — additive re-freeze between parallel phases.
+ *
+ * Added `Sale` and `Expense`, which PRODUCT_SPEC §6/§7 and AI_ACTIONS
+ * (`record_sale`, `record_expense`) both require and v1.0.0 omitted. Purely
+ * additive: no existing field changed shape, so no module built against
+ * v1.0.0 breaks. The seven deferred change requests in
+ * docs/contract-change-requests.md are NOT in this release — several of them
+ * reshape existing types, and that belongs in a v1.1 with a repair pass, not
+ * smuggled in beside a bug fix.
+ */
+export const CONTRACT_VERSION = '1.0.1-frozen';
 
 /* ------------------------------------------------------------------ ids */
 
@@ -242,6 +253,27 @@ export interface Product {
   reorderPoint: number;
   unitCost: number;
   unitPrice: number;
+}
+
+/** PRODUCT_SPEC §6. V1 is manual/imported sales — deliberately not accounting. */
+export interface Sale {
+  id: UUID;
+  businessId: UUID;
+  occurredAt: Instant;
+  total: number;
+  taxCollected: number;
+  note?: string;
+}
+
+/** PRODUCT_SPEC §7. */
+export interface Expense {
+  id: UUID;
+  businessId: UUID;
+  occurredAt: Instant;
+  vendor: string;
+  category: string;
+  amount: number;
+  description?: string;
 }
 
 /* --------------------------------------------- personal organization */

@@ -13,7 +13,10 @@ export interface ShResult {
 export function sh(
   cmd: string,
   args: string[],
-  opts: { cwd: string; timeoutMs?: number; env?: NodeJS.ProcessEnv } = { cwd: process.cwd() },
+  // Not NodeJS.ProcessEnv: once the DOM lib is in scope that type requires
+  // NODE_ENV, and callers here are adding a couple of variables, not building
+  // a whole environment.
+  opts: { cwd: string; timeoutMs?: number; env?: Record<string, string | undefined> } = { cwd: process.cwd() },
 ): Promise<ShResult> {
   const started = Date.now();
   return new Promise((resolve) => {

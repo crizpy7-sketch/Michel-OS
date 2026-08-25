@@ -8,10 +8,21 @@
     "test": "node --test --experimental-strip-types \"tests/unit/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "swarm": "node --experimental-strip-types tools/swarm/run.ts",
-    "gauntlet": "node --experimental-strip-types tools/swarm/gauntlet.ts"
+    "gauntlet": "node --experimental-strip-types tools/swarm/gauntlet.ts",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.3.0",
+    "@types/react": "19.2.18",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "next": "^15.5.23",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   }
 }
