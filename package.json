@@ -11,7 +11,8 @@
     "gauntlet": "node --experimental-strip-types tools/swarm/gauntlet.ts",
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "verify": "npm run build && npm run gauntlet -- --ui"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

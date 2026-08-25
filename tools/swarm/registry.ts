@@ -28,6 +28,7 @@ export const AGENTS: SwarmAgent[] = [
       'postcss.config.mjs',
       'supabase/**',
       'app/preview/**',
+      '.github/**',
       'public/**',
       'art/**',
     ],

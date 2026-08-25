@@ -1,0 +1,66 @@
+name: gauntlet
+
+# The gauntlet only protects the repo if something runs it without being asked.
+# Until this existed, the contract hash-pin, the tenant-isolation probes and the
+# determinism checks were all opt-in — which means they were advisory, not a
+# merge gate.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: gauntlet-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gauntlet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Chromium for the browser probe. Playwright is already a devDependency;
+      # only the browser binary needs fetching, and it is cached by version.
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+
+      # The browser probe drives the production server, so the build has to
+      # exist before the gauntlet runs — not after it, as an afterthought.
+      - name: Build
+        run: npm run build
+
+      - name: Run the gauntlet
+        run: npm run gauntlet -- --ui
+
+      # The report is the useful artefact when this fails: it carries every
+      # finding, already routed to the agent that owns the file.
+      - name: Upload gauntlet report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gauntlet-report
+          path: |
+            .swarm/gauntlet-report.json
+            .swarm/tickets/
+          if-no-files-found: ignore
+          retention-days: 14
