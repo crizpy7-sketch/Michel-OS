@@ -1,0 +1,17 @@
+{
+  "name": "michel-os",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Family Scheduling OS — swarm-built, gauntlet-verified",
+  "scripts": {
+    "test": "node --test --experimental-strip-types \"tests/unit/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "swarm": "node --experimental-strip-types tools/swarm/run.ts",
+    "gauntlet": "node --experimental-strip-types tools/swarm/gauntlet.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "typescript": "^5.7.2"
+  }
+}

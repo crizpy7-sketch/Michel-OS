@@ -1,0 +1,28 @@
+{
+  "package": "family-scheduling-os-codex-complete",
+  "approved_icons": [
+    "appointments.png",
+    "practice.png",
+    "shia-baby.png",
+    "school.png",
+    "competition.png",
+    "games.png",
+    "errands.png",
+    "hubby-work.png"
+  ],
+  "pending_art_placeholders": [
+    "shopping.placeholder.png",
+    "reminders.placeholder.png",
+    "ai-assistant.placeholder.png",
+    "all-schedules.placeholder.png",
+    "inbox.placeholder.png"
+  ],
+  "includes_original_shia_baby_art": true,
+  "includes_reference_boards": true,
+  "includes_swarm_orchestration": true,
+  "responsive_targets": [
+    "mobile",
+    "iPad/tablet",
+    "desktop"
+  ]
+}
