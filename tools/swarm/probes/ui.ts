@@ -27,7 +27,7 @@ const VIEWPORTS: Array<{ name: string; width: number; height: number; band: 'mob
   { name: 'Desktop', width: 1440, height: 900, band: 'desktop' },
 ];
 
-const ROUTES = ['/', '/schedules', '/business', '/ai', '/inbox', '/apps/appointments', '/apps/shopping', '/more'];
+const ROUTES = ['/', '/schedules', '/business', '/ai', '/inbox', '/more', '/appointments', '/practice', '/shopping', '/reminders'];
 
 const PORT = 3987;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -238,6 +238,6 @@ function ownerForRoute(route: string): string {
   if (route.startsWith('/schedules')) return 'schedules-screen';
   if (route.startsWith('/business')) return 'business-screen';
   if (route.startsWith('/ai') || route.startsWith('/inbox')) return 'ai-screen';
-  if (route.startsWith('/apps')) return 'miniapps-screen';
+  if (/^\/(appointments|practice|school|competition|games|errands|hubby-work|shopping|reminders)/.test(route)) return 'miniapps-screen';
   return 'home-screen';
 }

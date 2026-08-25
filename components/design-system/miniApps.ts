@@ -9,12 +9,14 @@ import type { DomainKey } from '../../lib/contracts/index.ts';
  * anywhere in the app should contain a literal `/icons/...` string.
  *
  * When final artwork lands for one of the five pending icons, the entire
- * change is two fields on one record:
+ * change is ONE field on ONE record: flip `artStatus` to `'approved'`. The
+ * `icon` path is derived from the id and the status by `iconPath()` below, so
+ * `shopping` automatically stops pointing at its `.placeholder.png` and
+ * starts pointing at the production file. The placeholder badge disappears on
+ * its own. There is no second edit to forget, and no path to mistype.
  *
- *     icon: '/icons/shopping.png',
- *     artStatus: 'approved',
- *
- * Nothing else moves, and the placeholder badge disappears on its own.
+ * `ICON_MANIFEST` + `assertMiniAppArtIntegrity()` make a wrong path a loud
+ * build failure instead of a silent 404 on a broken image.
  *
  * Hard rule (ASSET_MAP.md): approved artwork is never replaced by emoji,
  * Lucide, generic stock icons or CSS recreations. `icon` always points at a
@@ -72,13 +74,48 @@ export interface MiniApp {
 const APPROVED = 'approved' satisfies ArtStatus;
 const PENDING = 'pending' satisfies ArtStatus;
 
+/**
+ * The literal contents of `public/icons/`, checked in beside the registry.
+ *
+ * This is the guard. A mistyped or stale `icon` path used to fail as a silent
+ * 404 rendering a broken image; now it fails `assertMiniAppArtIntegrity()`,
+ * which runs at module load and therefore at `next build`. Add a file to
+ * `public/icons/`, add its name here.
+ */
+export const ICON_MANIFEST: readonly string[] = [
+  'appointments.png',
+  'practice.png',
+  'shia-baby.png',
+  'school.png',
+  'competition.png',
+  'games.png',
+  'errands.png',
+  'hubby-work.png',
+  'shopping.placeholder.png',
+  'reminders.placeholder.png',
+  'ai-assistant.placeholder.png',
+  'all-schedules.placeholder.png',
+  'inbox.placeholder.png',
+];
+
+/**
+ * The one place a mini-app asset path is constructed.
+ *
+ * Approved art is `/icons/<id>.png`; pending art is `/icons/<id>.placeholder.png`.
+ * Because the path is a function of (id, artStatus), flipping `artStatus` is
+ * the whole swap — exactly the one-record change ASSET_MAP.md promises.
+ */
+export function iconPath(id: MiniAppId, status: ArtStatus): string {
+  return status === 'approved' ? `/icons/${id}.png` : `/icons/${id}.placeholder.png`;
+}
+
 export const MINI_APPS: Record<MiniAppId, MiniApp> = {
   appointments: {
     id: 'appointments',
     label: 'Appointments',
     shortLabel: 'Appts',
     href: '/appointments',
-    icon: '/icons/appointments.png',
+    icon: iconPath('appointments', APPROVED),
     artStatus: APPROVED,
     accentVar: '--color-app-appointments',
     domain: 'appointments',
@@ -90,7 +127,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'Practice',
     shortLabel: 'Practice',
     href: '/practice',
-    icon: '/icons/practice.png',
+    icon: iconPath('practice', APPROVED),
     artStatus: APPROVED,
     accentVar: '--color-app-practice',
     domain: 'practice',
@@ -102,7 +139,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'Shia Baby',
     shortLabel: 'Shia Baby',
     href: '/business',
-    icon: '/icons/shia-baby.png',
+    icon: iconPath('shia-baby', APPROVED),
     artStatus: APPROVED,
     accentVar: '--color-app-shia-baby',
     domain: 'shia-baby',
@@ -114,7 +151,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'School',
     shortLabel: 'School',
     href: '/school',
-    icon: '/icons/school.png',
+    icon: iconPath('school', APPROVED),
     artStatus: APPROVED,
     accentVar: '--color-app-school',
     domain: 'school',
@@ -126,7 +163,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'Competition',
     shortLabel: 'Comp',
     href: '/competition',
-    icon: '/icons/competition.png',
+    icon: iconPath('competition', APPROVED),
     artStatus: APPROVED,
     accentVar: '--color-app-competition',
     domain: 'competition',
@@ -138,7 +175,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'Games',
     shortLabel: 'Games',
     href: '/games',
-    icon: '/icons/games.png',
+    icon: iconPath('games', APPROVED),
     artStatus: APPROVED,
     accentVar: '--color-app-games',
     domain: 'games',
@@ -150,7 +187,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'Errands',
     shortLabel: 'Errands',
     href: '/errands',
-    icon: '/icons/errands.png',
+    icon: iconPath('errands', APPROVED),
     artStatus: APPROVED,
     accentVar: '--color-app-errands',
     domain: 'errands',
@@ -162,7 +199,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'Hubby Work',
     shortLabel: 'Work',
     href: '/hubby-work',
-    icon: '/icons/hubby-work.png',
+    icon: iconPath('hubby-work', APPROVED),
     artStatus: APPROVED,
     accentVar: '--color-app-hubby-work',
     domain: 'work',
@@ -178,7 +215,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'Shopping',
     shortLabel: 'Shopping',
     href: '/shopping',
-    icon: '/icons/shopping.placeholder.png',
+    icon: iconPath('shopping', PENDING),
     artStatus: PENDING,
     accentVar: '--color-app-shopping',
     domain: 'shopping',
@@ -190,7 +227,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'Reminders',
     shortLabel: 'Remind',
     href: '/reminders',
-    icon: '/icons/reminders.placeholder.png',
+    icon: iconPath('reminders', PENDING),
     artStatus: PENDING,
     accentVar: '--color-app-reminders',
     domain: 'reminders',
@@ -202,7 +239,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'AI Assistant',
     shortLabel: 'AI',
     href: '/ai',
-    icon: '/icons/ai-assistant.placeholder.png',
+    icon: iconPath('ai-assistant', PENDING),
     artStatus: PENDING,
     accentVar: '--color-app-ai-assistant',
     domain: null,
@@ -214,7 +251,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'All Schedules',
     shortLabel: 'All',
     href: '/schedules',
-    icon: '/icons/all-schedules.placeholder.png',
+    icon: iconPath('all-schedules', PENDING),
     artStatus: PENDING,
     accentVar: '--color-app-all-schedules',
     domain: 'general',
@@ -226,7 +263,7 @@ export const MINI_APPS: Record<MiniAppId, MiniApp> = {
     label: 'Inbox',
     shortLabel: 'Inbox',
     href: '/inbox',
-    icon: '/icons/inbox.placeholder.png',
+    icon: iconPath('inbox', PENDING),
     artStatus: PENDING,
     accentVar: '--color-app-inbox',
     domain: 'inbox',
@@ -258,3 +295,45 @@ export function miniAppsInGroup(group: MiniAppGroup): readonly MiniApp[] {
 export const PENDING_ART: readonly MiniApp[] = MINI_APP_LIST.filter(
   (app) => app.artStatus === 'pending',
 );
+
+/**
+ * Fails loudly if the registry and `public/icons/` have drifted apart.
+ *
+ * Runs once at module load — which means it runs during `next build`, so a
+ * bad path is a red build rather than a broken image somebody notices in QA
+ * three days later. It is a pure check over thirteen records; the cost is nil.
+ */
+export function assertMiniAppArtIntegrity(): void {
+  const problems: string[] = [];
+  const manifest = new Set(ICON_MANIFEST);
+
+  for (const id of MINI_APP_IDS) {
+    const app = MINI_APPS[id];
+
+    if (app.id !== id) {
+      problems.push(`${id}: record id is "${app.id}"`);
+    }
+    const expected = iconPath(app.id, app.artStatus);
+    if (app.icon !== expected) {
+      problems.push(`${id}: icon is "${app.icon}", expected "${expected}"`);
+    }
+    const file = app.icon.replace('/icons/', '');
+    if (!manifest.has(file)) {
+      problems.push(`${id}: "${file}" is not in public/icons/ (ICON_MANIFEST)`);
+    }
+    if (app.artStatus === 'pending' && !file.endsWith('.placeholder.png')) {
+      problems.push(`${id}: marked pending but does not point at a .placeholder.png`);
+    }
+    if (app.artStatus === 'approved' && file.includes('.placeholder.')) {
+      problems.push(`${id}: marked approved but still points at a placeholder`);
+    }
+  }
+
+  if (problems.length > 0) {
+    throw new Error(
+      `Mini-app artwork registry is inconsistent with public/icons/:\n  - ${problems.join('\n  - ')}`,
+    );
+  }
+}
+
+assertMiniAppArtIntegrity();
