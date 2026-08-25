@@ -15,6 +15,7 @@
  *   npm run gauntlet                    # one full loop, ticket-only repairs
  *   npm run gauntlet -- --rounds 3      # allow 3 adversarial rounds
  *   npm run gauntlet -- --freeze        # re-pin the contract hash, then run
+ *   npm run gauntlet -- --ui            # add the browser probe (needs a prior build)
  *   npm run gauntlet -- --json          # machine-readable report on stdout
  *   npm run gauntlet -- --repair-cmd "<cmd>"   # shell out to fix each ticket
  */
@@ -22,7 +23,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ALL_CHALLENGERS } from './challengers.ts';
+import { ALL_CHALLENGERS, ui } from './challengers.ts';
 import { AGENTS, agentById, ownerOf } from './registry.ts';
 import { sh } from './exec.ts';
 import { bar, banner, c, GLYPH, kv, pad, rule } from './ui.ts';
@@ -37,16 +38,18 @@ interface Options {
   json: boolean;
   repairCmd: string | null;
   only: string[] | null;
+  ui: boolean;
 }
 
 function parseArgs(argv: string[]): Options {
-  const opts: Options = { rounds: 1, freeze: false, json: false, repairCmd: null, only: null };
+  const opts: Options = { rounds: 1, freeze: false, json: false, repairCmd: null, only: null, ui: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--rounds') opts.rounds = Math.max(1, Number(argv[++i] ?? 1));
     else if (a === '--freeze') opts.freeze = true;
     else if (a === '--json') opts.json = true;
     else if (a === '--repair-cmd') opts.repairCmd = argv[++i] ?? null;
+    else if (a === '--ui') opts.ui = true;
     else if (a === '--only') opts.only = (argv[++i] ?? '').split(',').filter(Boolean);
   }
   return opts;
@@ -170,7 +173,8 @@ async function runRound(round: number, opts: Options): Promise<RoundReport> {
   console.log('');
 
   const results: ChallengeResult[] = [];
-  const challengers = opts.only ? ALL_CHALLENGERS.filter((ch) => opts.only!.includes(ch.name)) : ALL_CHALLENGERS;
+  const pool = opts.ui ? [...ALL_CHALLENGERS, ui] : ALL_CHALLENGERS;
+  const challengers = opts.only ? pool.filter((ch) => opts.only!.includes(ch.name)) : pool;
 
   for (const challenger of challengers) {
     process.stdout.write(`  ${GLYPH.running} ${c.bold(challenger.name)} ${c.grey(`— hunting: ${challenger.hunts}`)}\n`);

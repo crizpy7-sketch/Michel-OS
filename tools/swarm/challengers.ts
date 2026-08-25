@@ -478,6 +478,18 @@ export const performance_ = probeChallenger(
   'warning',
 );
 
+/**
+ * The UI probe is heavy — it builds nothing but does start a real server and
+ * drive a real browser across eight routes and seven viewports. It is opt-in
+ * via `--ui` so the fast loop stays fast, and it runs in CI and before merges.
+ */
+export const ui = probeChallenger(
+  'ui',
+  'routes that throw, pages that scroll sideways on a phone, and one layout stretched across three device classes',
+  './probes/ui.ts',
+  'blocking',
+);
+
 export const ALL_CHALLENGERS: Challenger[] = [
   contractIntegrity,
   ownership,
