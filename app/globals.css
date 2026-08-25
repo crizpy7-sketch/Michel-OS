@@ -1,1 +1,648 @@
 @import "tailwindcss";
+
+/* ==========================================================================
+   MICHEL-OS — DESIGN TOKENS
+   --------------------------------------------------------------------------
+   Owner: Design System agent. Screen agents consume these; they never
+   hard-code a colour.
+
+   Palette direction (UI_RESPONSIVE_SPEC §5): deep navy / midnight, ivory /
+   cream, graphite, restrained metallic gold, subtle glass.
+
+   Two themes are defined:
+     LIGHT — ivory/cream ground, graphite ink        (the @theme defaults)
+     DARK  — midnight/navy ground, ivory ink         (prefers-color-scheme)
+
+   `@theme static` forces every token into :root so raw CSS (and the dark
+   override block below) can re-point them. Utilities compile to
+   `var(--color-*)`, so overriding a token in a media query re-themes every
+   utility that uses it — no `dark:` variant needed for colour.
+
+   Manual override hooks (higher specificity than the media query) are
+   provided for a future theme switcher:
+     <html data-theme="dark">  /  <html data-theme="light">
+   ========================================================================== */
+
+@theme static {
+  /* ------------------------------------------------------------ families */
+  /* --font-jakarta / --font-fraunces are injected by next/font in layout.tsx */
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-fraunces), ui-serif, "Iowan Old Style", Georgia,
+    "Times New Roman", serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* --------------------------------------------------------- type scale */
+  /* Compact, native-app sizing. 15px base, not 16px — reads denser and more
+     "app", and keeps three-column mini-app labels on one line at 320px.     */
+  --text-2xs: 0.6875rem;          /* 11px — micro labels, nav captions       */
+  --text-2xs--line-height: 0.9375rem;
+  --text-2xs--letter-spacing: 0.055em;
+  --text-xs: 0.75rem;             /* 12px — meta, timestamps                 */
+  --text-xs--line-height: 1.0625rem;
+  --text-xs--letter-spacing: 0.01em;
+  --text-sm: 0.8125rem;           /* 13px — secondary body, table cells      */
+  --text-sm--line-height: 1.1875rem;
+  --text-base: 0.9375rem;         /* 15px — body / UI default                */
+  --text-base--line-height: 1.4375rem;
+  --text-md: 1.0625rem;           /* 17px — list titles, emphasised body     */
+  --text-md--line-height: 1.5rem;
+  --text-lg: 1.25rem;             /* 20px — card titles                      */
+  --text-lg--line-height: 1.625rem;
+  --text-lg--letter-spacing: -0.01em;
+  --text-xl: 1.5rem;              /* 24px — section headings                 */
+  --text-xl--line-height: 1.875rem;
+  --text-xl--letter-spacing: -0.014em;
+  --text-2xl: 1.875rem;           /* 30px — page titles                      */
+  --text-2xl--line-height: 2.1875rem;
+  --text-2xl--letter-spacing: -0.018em;
+  --text-3xl: 2.375rem;           /* 38px — hero / greeting (mobile)         */
+  --text-3xl--line-height: 2.625rem;
+  --text-3xl--letter-spacing: -0.02em;
+  --text-4xl: 3rem;               /* 48px — hero (tablet+)                   */
+  --text-4xl--line-height: 3.125rem;
+  --text-4xl--letter-spacing: -0.022em;
+  --text-5xl: 3.75rem;            /* 60px — big numbers                      */
+  --text-5xl--line-height: 3.75rem;
+  --text-5xl--letter-spacing: -0.024em;
+
+  /* ---------------------------------------------------------- brand ramps
+     Raw ramps. Prefer the semantic tokens below in components; reach for a
+     ramp step only when the semantic layer genuinely has no name for it.   */
+  --color-midnight-950: #060a14;
+  --color-midnight-900: #0a1120;
+  --color-midnight-850: #0e1728;
+  --color-navy-800: #132038;
+  --color-navy-700: #16233d;
+  --color-navy-600: #22345c;
+  --color-navy-500: #35507e;
+  --color-navy-400: #5a76a6;
+  --color-navy-300: #8ca3c7;
+  --color-navy-200: #becbe0;
+  --color-navy-100: #dee5f0;
+
+  --color-ivory-50: #fdfcf9;
+  --color-ivory-100: #fbf8f3;
+  --color-ivory-200: #f4efe6;
+  --color-ivory-300: #e8dfcf;
+  --color-ivory-400: #d6c9b2;
+
+  --color-graphite-900: #1d2129;
+  --color-graphite-800: #262b34;
+  --color-graphite-700: #343a45;
+  --color-graphite-600: #474e5b;
+  --color-graphite-500: #5a616e;
+  --color-graphite-400: #7d8492;
+  --color-graphite-300: #a8aeba;
+
+  --color-gold-100: #f6ebd2;
+  --color-gold-200: #ecd9ae;
+  --color-gold-300: #dcbe80;
+  --color-gold-400: #cba75f;
+  --color-gold-500: #b08c46;
+  --color-gold-600: #8e6e33;
+  --color-gold-700: #7c5f1e;
+
+  /* ==================================================================
+     SEMANTIC TOKENS — LIGHT THEME (default)
+     ================================================================== */
+
+  /* grounds + surfaces */
+  --color-canvas: #fbf8f3;              /* app background (ivory)          */
+  --color-canvas-tint: #f4efe6;         /* sunken wells, striped rows      */
+  --color-surface: #ffffff;             /* card                            */
+  --color-surface-raised: #ffffff;      /* popovers, sheets                */
+  --color-surface-sunken: #f4efe6;      /* inset panels, inputs            */
+  --color-surface-inverse: #0e1728;     /* dark island inside a light page */
+  --color-scrim: rgb(29 33 41 / 0.42);  /* modal backdrop                  */
+
+  /* ink */
+  --color-ink: #1d2129;                 /* 15.2:1 on canvas                */
+  --color-ink-muted: #5a616e;           /*  5.9:1 on canvas                */
+  --color-ink-subtle: #7d8492;          /* decorative only — never body    */
+  --color-ink-inverse: #fbf8f3;         /* on dark fills                   */
+  --color-ink-on-accent: #1d2129;       /*  7.1:1 on gold                  */
+
+  /* lines — `line` is decorative, `control-border` is a real control edge
+     and is held at >= 3:1 against its ground (WCAG 1.4.11).               */
+  --color-line: #e8dfcf;
+  --color-line-strong: #d6c9b2;
+  --color-control-border: #94897a;      /* 3.24:1 on canvas                */
+  --color-hairline-gold: #dcbe80;
+
+  /* brand accent — restrained metallic gold.
+     `accent` is the metal itself (fills, hairlines, marks on dark).
+     `accent-strong` is the AA-safe *text* gold on a light ground.
+     `accent-soft` is a wash, for tints only.                              */
+  --color-accent: #cba75f;
+  --color-accent-strong: #7c5f1e;       /* 5.6:1 on canvas                 */
+  --color-accent-soft: #f6ebd2;
+  --color-accent-contrast: #1d2129;     /* ink that sits on --color-accent */
+
+  /* primary action surface (navy in light, see dark block for the swap) */
+  --color-primary: #cba75f;
+  --color-primary-hover: #b08c46;
+  --color-primary-active: #8e6e33;
+  --color-primary-ink: #1d2129;
+
+  /* semantic severity — deliberately NOT the brand gold, so `warning` can
+     never be mistaken for a decorative accent. Never used alone: every
+     severity is paired with a text label and a distinct icon shape.       */
+  --color-ok: #1f6b4e;                  /* 6.1:1 on canvas                 */
+  --color-ok-soft: #e2f0e8;
+  --color-ok-ink: #ffffff;
+  --color-warn: #8a4e0b;                /* 6.2:1 on canvas                 */
+  --color-warn-soft: #f8ebd9;
+  --color-warn-ink: #ffffff;
+  --color-critical: #a31c31;            /* 7.2:1 on canvas                 */
+  --color-critical-soft: #f9e3e6;
+  --color-critical-ink: #fff5f6;
+  --color-info: #2a4f7c;
+  --color-info-soft: #e4ebf4;
+  --color-info-ink: #ffffff;
+
+  /* focus — a single high-contrast ring colour per theme */
+  --color-focus: #16233d;
+  --color-focus-halo: rgb(203 167 95 / 0.55);
+
+  /* ----------------------------------------------------- mini-app accents
+     Tint-only. These are used behind icon artwork and as 2px rules; they
+     are NOT text colours and must never carry meaning on their own.       */
+  --color-app-appointments: #5a6ea8;
+  --color-app-practice: #a83a50;
+  --color-app-shia-baby: #9c6b42;
+  --color-app-school: #3f6f63;
+  --color-app-competition: #a07c34;
+  --color-app-games: #2f5b8f;
+  --color-app-errands: #6b7a45;
+  --color-app-hubby-work: #5c6672;
+  --color-app-shopping: #7a5c8e;
+  --color-app-reminders: #a4652e;
+  --color-app-ai-assistant: #3f7e85;
+  --color-app-all-schedules: #4a5568;
+  --color-app-inbox: #7e5a5a;
+
+  /* ------------------------------------------------------------- radius */
+  --radius-xs: 0.375rem;   /*  6px */
+  --radius-sm: 0.625rem;   /* 10px */
+  --radius-md: 0.875rem;   /* 14px */
+  --radius-lg: 1.125rem;   /* 18px */
+  --radius-xl: 1.5rem;     /* 24px */
+  --radius-2xl: 2rem;      /* 32px */
+  --radius-3xl: 2.5rem;    /* 40px */
+
+  /* ------------------------------------------------------------ shadows
+     Navy-tinted, low-alpha, never a hard drop shadow.                    */
+  --shadow-card: 0 1px 2px rgb(22 35 61 / 0.05), 0 6px 16px -10px rgb(22 35 61 / 0.18);
+  --shadow-raised: 0 2px 4px rgb(22 35 61 / 0.06), 0 14px 32px -18px rgb(22 35 61 / 0.28);
+  --shadow-float: 0 4px 10px rgb(22 35 61 / 0.08), 0 26px 60px -26px rgb(22 35 61 / 0.36);
+  --shadow-overlay: 0 30px 80px -30px rgb(6 10 20 / 0.5);
+  --shadow-inset-line: inset 0 1px 0 rgb(255 255 255 / 0.6);
+
+  /* ------------------------------------------------------------- motion */
+  --ease-out-soft: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+}
+
+/* ==========================================================================
+   NON-UTILITY TOKENS
+   Layout constants + glass recipe. Not in @theme because they are consumed
+   by raw CSS and inline style, not by generated utilities.
+   ========================================================================== */
+:root {
+  --mos-topbar-h: 3.5rem;
+  --mos-bottomnav-h: 4rem;
+  --mos-rail-w: 5rem;       /* tablet: icon-only rail          */
+  --mos-sidebar-w: 17rem;   /* desktop: labelled sidebar       */
+  --mos-gutter: 1rem;
+  --mos-safe-b: env(safe-area-inset-bottom, 0px);
+  --mos-safe-t: env(safe-area-inset-top, 0px);
+
+  --mos-glass-bg: rgb(255 255 255 / 0.72);
+  --mos-glass-border: rgb(255 255 255 / 0.7);
+  --mos-glass-blur: 20px;
+  --mos-glass-saturate: 160%;
+
+  /* Ambient ground wash — very low contrast, no banding, not a "gradient
+     look". Painted on a fixed pseudo-element so it never scrolls.        */
+  --mos-wash-a: rgb(203 167 95 / 0.07);
+  --mos-wash-b: rgb(22 35 61 / 0.05);
+
+  color-scheme: light dark;
+}
+
+/* ==========================================================================
+   DARK THEME — midnight / deep navy ground, ivory ink
+   ========================================================================== */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-canvas: #070c18;
+    --color-canvas-tint: #0a1120;
+    --color-surface: #0e1728;
+    --color-surface-raised: #16223a;
+    --color-surface-sunken: #0a1120;
+    --color-surface-inverse: #fbf8f3;
+    --color-scrim: rgb(3 6 12 / 0.66);
+
+    --color-ink: #f1eade;                 /* 16.3:1 on canvas */
+    --color-ink-muted: #9faac0;           /*  7.7:1 on surface */
+    --color-ink-subtle: #6d7a92;
+    --color-ink-inverse: #0a1120;
+    --color-ink-on-accent: #0a1120;       /*  8.3:1 on gold */
+
+    --color-line: #1c2942;
+    --color-line-strong: #2a3a58;
+    --color-control-border: #5c6b87;      /* 3.33:1 on surface */
+    --color-hairline-gold: #8e6e33;
+
+    --color-accent: #cba75f;
+    --color-accent-strong: #dcbe80;       /* 10.9:1 on canvas */
+    --color-accent-soft: rgb(203 167 95 / 0.14);
+    --color-accent-contrast: #0a1120;
+
+    --color-primary: #cba75f;
+    --color-primary-hover: #dcbe80;
+    --color-primary-active: #b08c46;
+    --color-primary-ink: #0a1120;
+
+    --color-ok: #63c79e;                  /* 8.7:1 on surface */
+    --color-ok-soft: rgb(99 199 158 / 0.15);
+    --color-ok-ink: #04150e;
+    --color-warn: #efa755;                /* 8.8:1 on surface */
+    --color-warn-soft: rgb(239 167 85 / 0.15);
+    --color-warn-ink: #1a0f02;
+    --color-critical: #f5808f;            /* 7.1:1 on surface */
+    --color-critical-soft: rgb(245 128 143 / 0.16);
+    --color-critical-ink: #21060a;
+    --color-info: #9dbbe4;
+    --color-info-soft: rgb(157 187 228 / 0.15);
+    --color-info-ink: #06101f;
+
+    --color-focus: #dcbe80;               /* 10.9:1 on canvas */
+    --color-focus-halo: rgb(220 190 128 / 0.32);
+
+    --color-app-appointments: #8e9dd4;
+    --color-app-practice: #e0798c;
+    --color-app-shia-baby: #d6a874;
+    --color-app-school: #6fae9e;
+    --color-app-competition: #d6b263;
+    --color-app-games: #6f9ed4;
+    --color-app-errands: #a8b878;
+    --color-app-hubby-work: #9aa5b4;
+    --color-app-shopping: #b593c8;
+    --color-app-reminders: #dd9a5f;
+    --color-app-ai-assistant: #6fbcc4;
+    --color-app-all-schedules: #8e9bb2;
+    --color-app-inbox: #c19595;
+
+    --shadow-card: 0 1px 0 rgb(255 255 255 / 0.04), 0 10px 24px -14px rgb(0 0 0 / 0.8);
+    --shadow-raised: 0 1px 0 rgb(255 255 255 / 0.05), 0 20px 44px -20px rgb(0 0 0 / 0.85);
+    --shadow-float: 0 1px 0 rgb(255 255 255 / 0.06), 0 34px 74px -28px rgb(0 0 0 / 0.9);
+    --shadow-overlay: 0 40px 96px -32px rgb(0 0 0 / 0.92);
+    --shadow-inset-line: inset 0 1px 0 rgb(255 255 255 / 0.06);
+
+    --mos-glass-bg: rgb(14 23 40 / 0.72);
+    --mos-glass-border: rgb(203 167 95 / 0.16);
+    --mos-wash-a: rgb(203 167 95 / 0.09);
+    --mos-wash-b: rgb(53 80 126 / 0.14);
+  }
+}
+
+/* Manual override — wins over the media query in both directions. */
+:root[data-theme="dark"] {
+  --color-canvas: #070c18;
+  --color-canvas-tint: #0a1120;
+  --color-surface: #0e1728;
+  --color-surface-raised: #16223a;
+  --color-surface-sunken: #0a1120;
+  --color-surface-inverse: #fbf8f3;
+  --color-scrim: rgb(3 6 12 / 0.66);
+  --color-ink: #f1eade;
+  --color-ink-muted: #9faac0;
+  --color-ink-subtle: #6d7a92;
+  --color-ink-inverse: #0a1120;
+  --color-ink-on-accent: #0a1120;
+  --color-line: #1c2942;
+  --color-line-strong: #2a3a58;
+  --color-control-border: #5c6b87;
+  --color-hairline-gold: #8e6e33;
+  --color-accent: #cba75f;
+  --color-accent-strong: #dcbe80;
+  --color-accent-soft: rgb(203 167 95 / 0.14);
+  --color-accent-contrast: #0a1120;
+  --color-primary: #cba75f;
+  --color-primary-hover: #dcbe80;
+  --color-primary-active: #b08c46;
+  --color-primary-ink: #0a1120;
+  --color-ok: #63c79e;
+  --color-ok-soft: rgb(99 199 158 / 0.15);
+  --color-ok-ink: #04150e;
+  --color-warn: #efa755;
+  --color-warn-soft: rgb(239 167 85 / 0.15);
+  --color-warn-ink: #1a0f02;
+  --color-critical: #f5808f;
+  --color-critical-soft: rgb(245 128 143 / 0.16);
+  --color-critical-ink: #21060a;
+  --color-info: #9dbbe4;
+  --color-info-soft: rgb(157 187 228 / 0.15);
+  --color-info-ink: #06101f;
+  --color-focus: #dcbe80;
+  --color-focus-halo: rgb(220 190 128 / 0.32);
+  --color-app-appointments: #8e9dd4;
+  --color-app-practice: #e0798c;
+  --color-app-shia-baby: #d6a874;
+  --color-app-school: #6fae9e;
+  --color-app-competition: #d6b263;
+  --color-app-games: #6f9ed4;
+  --color-app-errands: #a8b878;
+  --color-app-hubby-work: #9aa5b4;
+  --color-app-shopping: #b593c8;
+  --color-app-reminders: #dd9a5f;
+  --color-app-ai-assistant: #6fbcc4;
+  --color-app-all-schedules: #8e9bb2;
+  --color-app-inbox: #c19595;
+  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.04), 0 10px 24px -14px rgb(0 0 0 / 0.8);
+  --shadow-raised: 0 1px 0 rgb(255 255 255 / 0.05), 0 20px 44px -20px rgb(0 0 0 / 0.85);
+  --shadow-float: 0 1px 0 rgb(255 255 255 / 0.06), 0 34px 74px -28px rgb(0 0 0 / 0.9);
+  --shadow-overlay: 0 40px 96px -32px rgb(0 0 0 / 0.92);
+  --shadow-inset-line: inset 0 1px 0 rgb(255 255 255 / 0.06);
+  --mos-glass-bg: rgb(14 23 40 / 0.72);
+  --mos-glass-border: rgb(203 167 95 / 0.16);
+  --mos-wash-a: rgb(203 167 95 / 0.09);
+  --mos-wash-b: rgb(53 80 126 / 0.14);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    font-optical-sizing: auto;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Stop iOS Safari rubber-banding from exposing a white gutter. */
+    overscroll-behavior-y: none;
+  }
+
+  /* Ambient wash: fixed, behind everything, deliberately near-invisible.
+     Two very wide radials — reads as depth, not as a gradient. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-image:
+      radial-gradient(120% 70% at 78% -10%, var(--mos-wash-a), transparent 62%),
+      radial-gradient(110% 60% at 8% 4%, var(--mos-wash-b), transparent 58%);
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    font-weight: 600;
+    font-optical-sizing: auto;
+    text-wrap: balance;
+  }
+
+  p, li {
+    text-wrap: pretty;
+  }
+
+  /* Times, counts, money and dates line up in columns everywhere. */
+  time, [data-numeric] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* ---- focus -----------------------------------------------------------
+     One ring, high contrast in both themes, plus a soft halo so it stays
+     visible on top of gold and on top of dark navy alike.                */
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+    box-shadow: 0 0 0 5px var(--color-focus-halo);
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-accent) 34%, transparent);
+    color: var(--color-ink);
+  }
+
+  hr {
+    border: 0;
+    border-top: 1px solid var(--color-line);
+  }
+
+  img, svg, video, canvas {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* Inputs inherit the type system rather than the UA's. */
+  input, textarea, select, button {
+    font: inherit;
+    color: inherit;
+  }
+
+  ::placeholder {
+    color: var(--color-ink-subtle);
+    opacity: 1;
+  }
+
+  /* Subtle, themed scrollbars — desktop only concern, harmless elsewhere. */
+  * {
+    scrollbar-color: var(--color-line-strong) transparent;
+    scrollbar-width: thin;
+  }
+
+  /* ---- reduced motion (SPEC §8) ---------------------------------------- */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ==========================================================================
+   COMPONENT RECIPES
+   Only for things that genuinely cannot be expressed as a short utility
+   string: glass, the shell grid, the app grid, the shimmer.
+   ========================================================================== */
+@layer components {
+  /* Subtle glass. Falls back to an opaque surface where backdrop-filter is
+     unavailable, so text contrast is never at the mercy of the backdrop. */
+  .mos-glass {
+    background-color: var(--color-surface);
+    border: 1px solid var(--color-line);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .mos-glass {
+      background-color: var(--mos-glass-bg);
+      border-color: var(--mos-glass-border);
+      -webkit-backdrop-filter: blur(var(--mos-glass-blur)) saturate(var(--mos-glass-saturate));
+      backdrop-filter: blur(var(--mos-glass-blur)) saturate(var(--mos-glass-saturate));
+    }
+  }
+
+  /* A single hairline of metal across the top of a surface. The only place
+     gold is allowed to touch a large element. */
+  .mos-gold-edge {
+    position: relative;
+  }
+  .mos-gold-edge::before {
+    content: "";
+    position: absolute;
+    inset-inline: 12%;
+    top: 0;
+    height: 1px;
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      var(--color-hairline-gold) 22%,
+      var(--color-hairline-gold) 78%,
+      transparent
+    );
+    opacity: 0.85;
+    pointer-events: none;
+  }
+
+  /* Mini-app grid — SPEC §2 (3 cols mobile) / §3 (4–5 cols tablet). */
+  .mos-app-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem 0.5rem;
+  }
+  @media (min-width: 48rem) {
+    .mos-app-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1.25rem 1rem;
+    }
+  }
+  @media (min-width: 64rem) {
+    .mos-app-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+  }
+  @media (min-width: 90rem) {
+    .mos-app-grid {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+  }
+
+  /* The application shell. Mobile: one column, nav docked to the bottom.
+     >=48rem: a nav column appears on the left and the bottom bar is gone. */
+  .mos-shell {
+    display: grid;
+    grid-template-columns: 1fr;
+    min-height: 100dvh;
+  }
+  @media (min-width: 48rem) {
+    .mos-shell {
+      grid-template-columns: var(--mos-rail-w) minmax(0, 1fr);
+    }
+  }
+  @media (min-width: 80rem) {
+    .mos-shell {
+      grid-template-columns: var(--mos-sidebar-w) minmax(0, 1fr);
+    }
+  }
+
+  /* Main scroll region. Bottom padding clears the mobile tab bar + the
+     home indicator; it collapses once the bar is gone. */
+  .mos-main {
+    min-width: 0;
+    padding-bottom: calc(var(--mos-bottomnav-h) + var(--mos-safe-b) + 1.5rem);
+  }
+  @media (min-width: 48rem) {
+    .mos-main {
+      padding-bottom: 2.5rem;
+    }
+  }
+
+  /* Skip link — off-screen until focused, then a real, visible control. */
+  .mos-skip-link {
+    position: fixed;
+    top: 0.75rem;
+    left: 0.75rem;
+    z-index: 90;
+    transform: translateY(calc(-100% - 1.5rem));
+    padding: 0.625rem 1rem;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-surface-raised);
+    color: var(--color-ink);
+    border: 1px solid var(--color-control-border);
+    box-shadow: var(--shadow-float);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    transition: transform 160ms var(--ease-out-soft);
+  }
+  .mos-skip-link:focus-visible {
+    transform: translateY(0);
+  }
+
+  /* Horizontal overflow is contained, never inflicted on <body>. */
+  .mos-scroll-x {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Loading shimmer. Static (no animation) under reduced-motion. */
+  .mos-shimmer {
+    position: relative;
+    overflow: hidden;
+    background-color: color-mix(in oklab, var(--color-ink) 9%, transparent);
+  }
+  .mos-shimmer::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background-image: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in oklab, var(--color-ink) 6%, transparent),
+      transparent
+    );
+    animation: mos-sweep 1.5s var(--ease-out-soft) infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .mos-shimmer::after {
+      animation: none;
+      display: none;
+    }
+  }
+}
+
+@keyframes mos-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
