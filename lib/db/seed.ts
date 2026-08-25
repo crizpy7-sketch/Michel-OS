@@ -218,9 +218,14 @@ export function seed(repo: SqliteRepository): void {
     ['shf-mon-close', 'emp-jo', 0, 19, 24, 'published', 'Closing'],
     // Riley is on the floor while the school pickup needs a responsible adult.
     ['shf-wed-open', 'emp-riley', 2, 14, 20, 'published', 'Opening'],
-    ['shf-wed-close', null, 2, 20, 24, 'draft', 'Closing'],
+    // Published with nobody on it: the shop is committed to being open with no
+    // closer. This is the staffing warning PRODUCT_SPEC §4 and §10 ask for, and
+    // a seed without one means that alert path is never exercised.
+    ['shf-wed-close', null, 2, 20, 24, 'published', 'Closing'],
     ['shf-fri-open', 'emp-dee', 4, 14, 19, 'published', 'Opening'],
     ['shf-sat-open', 'emp-jo', 5, 15, 21, 'published', 'Opening'],
+    // A genuine draft, so the two states are distinguishable in the UI.
+    ['shf-sun-open', null, 6, 16, 21, 'draft', 'Opening'],
   ];
   for (const [id, employeeId, day, startHour, endHour, status, role] of shifts) {
     db.prepare(
