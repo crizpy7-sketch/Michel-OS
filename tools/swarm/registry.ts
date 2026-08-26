@@ -25,7 +25,7 @@ export const AGENTS: SwarmAgent[] = [
       'README.md',
       'LICENSE',
       'tests/integration/**',
-      'public/**',
+      'tools/assets/**',
       'art/**',
     ],
     dependsOn: [],
@@ -35,7 +35,12 @@ export const AGENTS: SwarmAgent[] = [
     id: 'household-auth',
     letter: 'E',
     name: 'Household/Auth Agent',
-    owns: ['domains/household/**', 'tests/unit/permissions.test.ts'],
+    owns: [
+      'domains/household/**',
+      'server/auth/**',
+      'tests/unit/permissions.test.ts',
+      'tests/auth/**',
+    ],
     dependsOn: ['orchestrator'],
     phase: 'B-foundations',
   },
@@ -67,6 +72,38 @@ export const AGENTS: SwarmAgent[] = [
     ],
     dependsOn: ['orchestrator'],
     phase: 'C-domains',
+  },
+
+  /* -- Phase B2: the runtime tiers that turn the engines into an app ------- */
+
+  {
+    id: 'backend',
+    letter: 'B2',
+    name: 'Backend / Persistence Agent',
+    owns: ['db/**', 'server/db/**', 'tests/db/**'],
+    dependsOn: ['orchestrator'],
+    phase: 'B-foundations',
+  },
+
+  {
+    id: 'interface',
+    letter: 'L',
+    name: 'Interface Agent',
+    // Owns everything the browser downloads, plus the server-side shell that
+    // delivers it. Separated from B3 because the API's contract and the app's
+    // appearance change for entirely different reasons and at different rates.
+    owns: ['public/**', 'server/ui/**', 'tests/ui/**'],
+    dependsOn: ['orchestrator', 'web'],
+    phase: 'D-interface',
+  },
+
+  {
+    id: 'web',
+    letter: 'B3',
+    name: 'Web / API Agent',
+    owns: ['server/http/**', 'server/api/**', 'server/main.ts', 'tests/http/**'],
+    dependsOn: ['orchestrator', 'backend', 'household-auth'],
+    phase: 'B-foundations',
   },
 
   /* -- Phase C2: the experience layer, built on the frozen v1.1 contracts -- */

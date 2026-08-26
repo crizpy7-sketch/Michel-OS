@@ -1,3 +1,7 @@
 node_modules/
 .swarm/
 *.log
+
+# app runtime
+.env
+data/
