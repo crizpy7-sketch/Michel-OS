@@ -69,6 +69,17 @@ export const AGENTS: SwarmAgent[] = [
     phase: 'C-domains',
   },
 
+  /* -- Phase B2: the runtime tiers that turn the engines into an app ------- */
+
+  {
+    id: 'backend',
+    letter: 'B2',
+    name: 'Backend / Persistence Agent',
+    owns: ['db/**', 'server/db/**', 'tests/db/**'],
+    dependsOn: ['orchestrator'],
+    phase: 'B-foundations',
+  },
+
   /* -- Phase C2: the experience layer, built on the frozen v1.1 contracts -- */
 
   {
