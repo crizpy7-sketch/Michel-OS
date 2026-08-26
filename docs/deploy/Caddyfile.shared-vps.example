@@ -1,0 +1,17 @@
+# Add this site block to the VPS's existing Caddy configuration.
+# Do not run a second Caddy instance on ports 80/443 when another reverse
+# proxy already owns them.
+#
+# Replace michel.example.com with the real Michel OS hostname, then reload the
+# existing host proxy. Michel OS itself listens only on 127.0.0.1:3100.
+
+michel.example.com {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:3100
+
+  header {
+    X-Content-Type-Options nosniff
+    Referrer-Policy no-referrer
+    X-Frame-Options DENY
+  }
+}
