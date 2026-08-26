@@ -155,7 +155,16 @@ export async function createPgliteDb(): Promise<Db> {
 
   const run = async <T>(sql: string, params: readonly unknown[]): Promise<QueryResult<T>> => {
     const result = await pglite.query(sql, params as unknown[]);
-    return { rows: result.rows as T[], rowCount: result.rows.length };
+    // `rows.length` is NOT the row count: an INSERT/UPDATE without RETURNING
+    // yields no rows but does affect some, and reporting 0 there made
+    // `on conflict do nothing` look like it had always conflicted. Prefer the
+    // driver's own affected-row count and fall back to the row count only when
+    // it is absent.
+    const affected = (result as { affectedRows?: number }).affectedRows;
+    return {
+      rows: result.rows as T[],
+      rowCount: typeof affected === 'number' && affected > 0 ? affected : result.rows.length,
+    };
   };
 
   const exec = async (sql: string): Promise<void> => {
