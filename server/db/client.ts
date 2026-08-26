@@ -231,7 +231,14 @@ export async function loadMigrations(dir: string = MIGRATIONS_DIR): Promise<Migr
  * never re-read from disk — an edited migration that has already run is a
  * mistake, and `verifyMigrations` reports it rather than silently diverging.
  */
-export async function migrate(db: Db, dir: string = MIGRATIONS_DIR): Promise<string[]> {
+/**
+ * The bookkeeping table both `migrate` and `verifyMigrations` depend on.
+ *
+ * Shared because verification runs BEFORE the first migration on a fresh
+ * database, and querying a table that does not exist yet is an error rather
+ * than an empty result — which made a first boot look like a migration failure.
+ */
+async function ensureMigrationTable(db: Db): Promise<void> {
   await db.exec(`
     create table if not exists schema_migration (
       name        text primary key,
@@ -239,6 +246,10 @@ export async function migrate(db: Db, dir: string = MIGRATIONS_DIR): Promise<str
       checksum    text not null
     )
   `);
+}
+
+export async function migrate(db: Db, dir: string = MIGRATIONS_DIR): Promise<string[]> {
+  await ensureMigrationTable(db);
 
   const applied = new Set(
     (await db.query<{ name: string }>('select name from schema_migration')).rows.map((r) => r.name),
@@ -268,6 +279,7 @@ export async function migrate(db: Db, dir: string = MIGRATIONS_DIR): Promise<str
  * check on boot, so the server does.
  */
 export async function verifyMigrations(db: Db, dir: string = MIGRATIONS_DIR): Promise<string[]> {
+  await ensureMigrationTable(db);
   const rows = (
     await db.query<{ name: string; checksum: string }>('select name, checksum from schema_migration')
   ).rows;

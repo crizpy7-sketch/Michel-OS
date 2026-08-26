@@ -35,7 +35,12 @@ export const AGENTS: SwarmAgent[] = [
     id: 'household-auth',
     letter: 'E',
     name: 'Household/Auth Agent',
-    owns: ['domains/household/**', 'tests/unit/permissions.test.ts'],
+    owns: [
+      'domains/household/**',
+      'server/auth/**',
+      'tests/unit/permissions.test.ts',
+      'tests/auth/**',
+    ],
     dependsOn: ['orchestrator'],
     phase: 'B-foundations',
   },

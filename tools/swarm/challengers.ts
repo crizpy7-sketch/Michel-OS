@@ -338,7 +338,19 @@ export const definitionOfDone: Challenger = {
   async run(ctx: ChallengeContext): Promise<ChallengeResult> {
     const started = now();
     const findings: Finding[] = [];
-    const domainFiles = (await walk(join(ctx.repoRoot, 'domains'), ctx.repoRoot)).filter((f) => f.endsWith('.ts'));
+    // Delivery is judged by what an agent OWNS, wherever that lives. This used
+    // to scan only `domains/`, which was right when every agent's work sat
+    // there and became wrong the moment runtime-tier agents owned `server/`
+    // and `db/` instead — they read as having delivered nothing at all.
+    const sourceRoots = ['domains', 'server', 'lib', 'db'];
+    const domainFiles: string[] = [];
+    for (const root of sourceRoots) {
+      domainFiles.push(
+        ...(await walk(join(ctx.repoRoot, root), ctx.repoRoot)).filter(
+          (f) => f.endsWith('.ts') || f.endsWith('.sql'),
+        ),
+      );
+    }
     const testFiles = (await walk(join(ctx.repoRoot, 'tests'), ctx.repoRoot)).filter((f) => f.endsWith('.test.ts'));
     const testCorpus = (
       await Promise.all(testFiles.map((f) => readFile(join(ctx.repoRoot, f), 'utf8').catch(() => '')))
@@ -358,6 +370,21 @@ export const definitionOfDone: Challenger = {
       }
       for (const file of delivered) {
         const src = await readFile(join(ctx.repoRoot, file), 'utf8');
+        if (file.endsWith('.sql')) {
+          // A migration exports nothing and has no test named after it; what it
+          // must not be is empty. Its real verification is the schema suite,
+          // which executes it against a live Postgres.
+          if (src.trim().length < 200) {
+            findings.push({
+              challenger: 'definition-of-done',
+              severity: 'warning',
+              owner: agent.id,
+              file,
+              message: `migration is only ${src.trim().length} bytes — looks like a placeholder`,
+            });
+          }
+          continue;
+        }
         if (!/^export /m.test(src)) {
           findings.push({
             challenger: 'definition-of-done',
@@ -389,7 +416,7 @@ export const definitionOfDone: Challenger = {
       }
     }
 
-    return result('definition-of-done', started, findings, { domainModules: domainFiles.length, testFiles: testFiles.length });
+    return result('definition-of-done', started, findings, { sourceModules: domainFiles.length, testFiles: testFiles.length });
   },
 };
 
