@@ -87,7 +87,8 @@ function renderProposal(mount, data) {
     content.push(h('div', {}, ...errors.map((error) => h('p', { style: { color: 'var(--danger, #8b1e1e)' } }, error.message ?? 'That request could not be validated.'))));
   }
 
-  if (decision === 'confirm' && data.actionId) {
+  if ((decision === 'confirm' || decision === 'execute') && data.actionId) {
+    const label = decision === 'confirm' ? 'Confirm and apply' : 'Apply';
     const confirm = h('button', {
       class: 'btn btn--primary',
       type: 'button',
@@ -98,7 +99,7 @@ function renderProposal(mount, data) {
           mount.replaceChildren(card(
             'Done',
             provider,
-            chip('Confirmed & applied', 'good'),
+            chip(decision === 'confirm' ? 'Confirmed & applied' : 'Applied', 'good'),
             h('p', { style: { marginTop: '.75rem' } }, describeAction(proposal)),
           ));
           toast(result.executed ? 'Action applied' : 'Action finished', 'good');
@@ -107,7 +108,7 @@ function renderProposal(mount, data) {
           event.currentTarget.disabled = false;
         }
       },
-    }, 'Confirm and apply');
+    }, label);
     content.push(confirm);
   } else if (decision === 'reject') {
     content.push(h('p', { style: { color: 'var(--muted)' } }, 'Nothing was changed. Add the missing detail and try again.'));
