@@ -85,6 +85,15 @@ export const AGENTS: SwarmAgent[] = [
     phase: 'B-foundations',
   },
 
+  {
+    id: 'web',
+    letter: 'B3',
+    name: 'Web / API Agent',
+    owns: ['server/http/**', 'server/api/**', 'server/main.ts', 'tests/http/**'],
+    dependsOn: ['orchestrator', 'backend', 'household-auth'],
+    phase: 'B-foundations',
+  },
+
   /* -- Phase C2: the experience layer, built on the frozen v1.1 contracts -- */
 
   {
