@@ -41,11 +41,14 @@ function overview(base) {
 
 function staffing(base, mount) {
   const employeeById = new Map((base.employees ?? []).map((e) => [e.id, e]));
-  return h('div', {}, state.can('business.manage') ? addEmployee(mount) : null, state.can('employee.schedule') ? addShift(base, mount) : null,
+  return h('div', {},
+    state.can('business.manage') ? addEmployee(mount) : null,
+    state.can('employee.schedule') ? addShift(base, mount) : null,
+    state.can('employee.schedule') && (base.shifts ?? []).length ? publishBox(mount) : null,
     (base.warnings ?? []).length ? card('Warnings', null, ...(base.warnings ?? []).map((w) => h('p', {}, chip(w.level ?? 'warning', w.level === 'blocking' ? 'alert' : 'warn'), ` ${w.message}`))) : null,
     (base.shifts ?? []).length === 0 ? empty({ title: 'No shifts scheduled', body: 'Assign employee work schedules here so coverage is visible alongside family commitments.' })
       : h('div', {}, ...(base.shifts ?? []).map((shift) => {
-          const person = shift.employeeId ? employeeById.get(shift.employeeId)?.displayName : 'Unassigned';
+          const person = shift.employeeId ? employeeById.get(shift.employeeId)?.displayName ?? 'Unknown employee' : 'Unassigned';
           return card(person, shift.status ?? null, h('p', {}, `${dayShort(shift.startsAt, base.business.timezone)} · ${timeRange(shift.startsAt, shift.endsAt, base.business.timezone)}`), shift.role ? h('p', { style: { color: 'var(--muted)' } }, shift.role) : null);
         })));
 }
@@ -68,13 +71,26 @@ function addShift(base, mount) {
     field('Employee', employee), h('div', { class: 'split' }, field('Starts', starts), field('Ends', ends)), field('Role', role), h('button', { class: 'btn btn--primary', type: 'submit' }, 'Assign shift')));
 }
 
+function publishBox(mount) {
+  return card('Publish schedule', null,
+    h('p', { style: { color: 'var(--muted)' } }, 'Publishing runs the staffing rules again. Blocking conflicts are refused instead of silently changing the schedule.'),
+    h('button', { class: 'btn', type: 'button', onClick: async (e) => {
+      e.currentTarget.disabled = true;
+      try {
+        const result = await api.post(`/api/households/${state.household.id}/business/publish`, {});
+        toast(`${result.published ?? 0} shift(s) published`); await load(mount, 'staffing');
+      } catch (error) { toast(error.message ?? 'Schedule could not be published.', 'error'); }
+      finally { e.currentTarget.disabled = false; }
+    } }, 'Publish current schedule'));
+}
+
 function inventory(base, data, mount) {
   const products = data.products ?? base.products ?? []; const low = new Set((data.lowStock ?? []).map((x) => x.productId));
   return h('div', {}, state.can('business.manage') ? addProduct(mount) : null, state.can('business.manage') && products.length ? adjustStock(products, mount) : null,
     products.length === 0 ? empty({ title: 'No inventory yet', body: 'Add products to see stock and low-stock warnings.' })
       : h('div', {}, ...products.map((p) => card(p.name, p.sku,
           h('p', {}, h('strong', {}, `${p.quantityOnHand} on hand`), ` · reorder at ${p.reorderPoint}`),
-          h('p', {}, `Price ${money(p.unitPrice ?? p.unitPriceCents ?? 0)} · Cost ${money(p.unitCost ?? p.unitCostCents ?? 0)}`), low.has(p.id) ? chip('Low stock', 'alert') : chip('Stock OK', 'good')))));
+          h('p', {}, `Price ${money(p.unitPrice ?? 0)} · Cost ${money(p.unitCost ?? 0)}`), low.has(p.id) ? chip('Low stock', 'alert') : chip('Stock OK', 'good')))));
 }
 
 function addProduct(mount) {
@@ -88,20 +104,28 @@ function addProduct(mount) {
 }
 
 function adjustStock(products, mount) {
-  const product = select(products.map((p) => [p.id, p.name])); const kind = select([['restock', 'Restock'], ['adjustment', 'Adjustment'], ['return', 'Return'], ['damage', 'Damage']]);
-  const delta = input({ type: 'number', required: true, step: 1, placeholder: 'Use a negative number for damage/negative adjustment' });
+  const product = select(products.map((p) => [p.id, p.name]));
+  const kind = select([['receive', 'Receive stock'], ['return', 'Customer return'], ['shrinkage', 'Shrinkage / damage'], ['adjustment', 'Count adjustment']]);
+  const delta = input({ type: 'number', required: true, step: 1, placeholder: 'Positive for receive/return; negative for shrinkage' });
   return card('Adjust stock', null, h('form', { onSubmit: async (e) => { e.preventDefault(); try {
     await api.post(`/api/households/${state.household.id}/business/inventory`, { productId: product.value, kind: kind.value, quantityDelta: Number(delta.value) });
     toast('Inventory updated'); await load(mount, 'inventory');
-  } catch (error) { toast(error.message ?? 'Could not update inventory.', 'error'); } } }, field('Product', product), field('Movement', kind), field('Quantity change', delta), h('button', { class: 'btn', type: 'submit' }, 'Update stock')));
+  } catch (error) { toast(error.message ?? 'Could not update inventory.', 'error'); } } }, field('Product', product), field('Movement', kind), field('Quantity change', delta, { hint: 'Receive and return require a positive number. Shrinkage requires a negative number. Adjustment can go either direction.' }), h('button', { class: 'btn', type: 'submit' }, 'Update stock')));
 }
 
 function finance(base, data, mount) {
   const sales = data.sales ?? {}; const expenses = data.expenses ?? {}; const tax = data.taxSetAside;
-  return h('div', {}, h('div', { class: 'dash', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: '.75rem', marginBottom: '1rem' } },
-      metric('Sales', money(sales.totalCents ?? sales.grossCents ?? 0)), metric('Expenses', money(expenses.totalCents ?? 0)), metric('Tax set-aside', money(tax?.recommendedCents ?? tax?.amountCents ?? 0))),
-    tax ? card(tax.label ?? 'Tax Set-Aside', null, h('p', {}, money(tax.recommendedCents ?? tax.amountCents ?? 0)), h('p', { style: { color: 'var(--muted)' } }, tax.disclaimer ?? 'Estimate only; not tax advice.')) : null,
-    state.can('finance.manage') ? recordExpenseBox(mount) : null, state.can('finance.manage') && (base.products ?? []).length ? recordSaleBox(base.products, mount) : null);
+  return h('div', {},
+    h('div', { class: 'dash', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: '.75rem', marginBottom: '1rem' } },
+      metric('Sales', money(sales.totalGrossCents ?? 0)), metric('Expenses', money(expenses.totalCents ?? 0)), metric('Tax set-aside', money(tax?.estimatedReserveCents ?? 0))),
+    tax ? card(tax.label, null,
+      h('p', {}, h('strong', {}, money(tax.estimatedReserveCents)), ` estimated reserve at ${(tax.rate * 100).toFixed(1)}%`),
+      h('p', {}, `${money(tax.reservedCents)} recorded as reserved · ${money(tax.remainingReserveCents)} remaining`),
+      tax.overReserved ? chip('Reserved above estimate', 'good') : null,
+      h('p', { style: { color: 'var(--muted)', marginTop: '.75rem' } }, tax.disclaimer)) : null,
+    state.can('finance.manage') ? recordExpenseBox(mount) : null,
+    state.can('finance.manage') && (base.products ?? []).length ? recordSaleBox(base.products, mount) : null,
+  );
 }
 
 function recordExpenseBox(mount) {
@@ -113,10 +137,10 @@ function recordExpenseBox(mount) {
 }
 
 function recordSaleBox(products, mount) {
-  const product = select(products.map((p) => [p.id, `${p.name} — ${money(p.unitPrice ?? p.unitPriceCents ?? 0)}`])); const qty = input({ type: 'number', min: 1, step: 1, value: 1, required: true });
+  const product = select(products.map((p) => [p.id, `${p.name} — ${money(p.unitPrice ?? 0)}`])); const qty = input({ type: 'number', min: 1, step: 1, value: 1, required: true });
   return card('Record sale', null, h('form', { onSubmit: async (e) => { e.preventDefault(); try {
     const picked = products.find((p) => p.id === product.value);
-    await api.post(`/api/households/${state.household.id}/business/sales`, { items: [{ productId: picked.id, quantity: Number(qty.value), unitPriceCents: picked.unitPrice ?? picked.unitPriceCents ?? 0 }] });
+    await api.post(`/api/households/${state.household.id}/business/sales`, { items: [{ productId: picked.id, quantity: Number(qty.value), unitPriceCents: picked.unitPrice ?? 0 }] });
     toast('Sale recorded'); await load(mount, 'finance');
   } catch (error) { toast(error.message ?? 'Could not record sale.', 'error'); } } }, field('Product', product), field('Quantity', qty), h('button', { class: 'btn btn--primary', type: 'submit' }, 'Record sale')));
 }
