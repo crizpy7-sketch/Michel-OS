@@ -67,6 +67,36 @@ test('Assistant falls back locally, confirms, executes once, and cannot replay',
   assert.equal(finalList.body.items.length, 1, 'replay must not duplicate the mutation');
 });
 
+test('a high-confidence owner request can execute automatically through the validator', async () => {
+  const proposal = await call<{
+    actionId: string;
+    provider: string;
+    executed: boolean;
+    proposal: { type: string };
+    verdict: { decision: string };
+  }>(h, `/api/households/${owner.householdId}/assistant/propose`, {
+    method: 'POST', token: owner.token,
+    body: { text: 'Owner plays game Saturday at 9 am' },
+  });
+
+  assert.equal(proposal.status, 201);
+  assert.equal(proposal.body.provider, 'local');
+  assert.equal(proposal.body.proposal.type, 'create_event');
+  assert.equal(proposal.body.verdict.decision, 'execute');
+  assert.equal(proposal.body.executed, true);
+
+  const calendar = await call<{ occurrences: Array<{ title: string; domain: string; participantIds: string[] }> }>(
+    h,
+    `/api/households/${owner.householdId}/occurrences?from=2026-08-28T00%3A00%3A00.000Z&to=2026-08-31T00%3A00%3A00.000Z`,
+    { token: owner.token },
+  );
+  assert.equal(calendar.status, 200);
+  const event = calendar.body.occurrences.find((item) => /game/i.test(item.title));
+  assert.ok(event, 'the autonomous action should create a real calendar occurrence');
+  assert.equal(event.domain, 'games');
+  assert.ok(event.participantIds.includes(owner.memberId));
+});
+
 test('a viewer cannot ask the Assistant to mutate the household', async () => {
   const viewer = await joinHousehold(h, owner, 'viewer');
   const denied = await call(h, `/api/households/${owner.householdId}/assistant/propose`, {
