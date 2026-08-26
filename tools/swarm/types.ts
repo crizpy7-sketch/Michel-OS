@@ -4,6 +4,7 @@ export type Phase =
   | 'A-contracts'
   | 'B-foundations'
   | 'C-domains'
+  | 'C2-experiences'
   | 'D-integration'
   | 'E-gauntlet'
   | 'F-repair';

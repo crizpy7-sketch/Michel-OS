@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_MAX_OCCURRENCES,
   expandOccurrences,
+  expandOccurrencesDetailed,
   occurrencesOverlap,
 } from '../../domains/scheduling/recurrence.ts';
 import type { EventRecord, Occurrence, RecurrenceRule } from '../../lib/contracts/index.ts';
@@ -784,4 +785,171 @@ test('occurrencesOverlap composes with expandOccurrences output', () => {
   assert.ok(first && second && dentist);
   assert.equal(occurrencesOverlap(second, dentist), true, 'Jan 6 practice clashes with the dentist');
   assert.equal(occurrencesOverlap(first, dentist), false, 'Jan 5 practice does not');
+});
+
+/* ================================================================== v1.1 ==
+ * Contract v1.1 additions: CR-005 (location), CR-006 (weekStart),
+ * CR-007 (truncation signal).
+ * ========================================================================= */
+
+test('CR-006: weekStart moves the interval anchor for a rule that straddles the boundary', () => {
+  // Series starts SUNDAY 2026-01-04, every 2 weeks on Sunday AND Monday.
+  // With WKST=MO that Sunday CLOSES the week beginning Mon 2025-12-29, so its
+  // Monday partner is nine days later, 2026-01-12.
+  // With WKST=SU that Sunday OPENS its own week, so the Monday partner is the
+  // very next day, 2026-01-05. A single-weekday rule cannot tell the two
+  // apart — it takes a pair that straddles the week boundary.
+  const sundayStart = { startsAt: '2026-01-04T17:00:00.000Z', endsAt: '2026-01-04T18:00:00.000Z' };
+  const window = { from: '2026-01-01T00:00:00.000Z', to: '2026-02-01T00:00:00.000Z' };
+  const rule: RecurrenceRule = { freq: 'WEEKLY', interval: 2, byWeekday: ['SU', 'MO'] };
+
+  const mondayFirst = startsOf(expandOccurrences(makeRecurring(rule, sundayStart), window));
+  const sundayFirst = startsOf(
+    expandOccurrences(makeRecurring({ ...rule, weekStart: 'SU' }, sundayStart), window),
+  );
+
+  assert.deepEqual(mondayFirst, [
+    '2026-01-04T17:00:00.000Z',
+    '2026-01-12T17:00:00.000Z',
+    '2026-01-18T17:00:00.000Z',
+    '2026-01-26T17:00:00.000Z',
+  ]);
+  assert.deepEqual(sundayFirst, [
+    '2026-01-04T17:00:00.000Z',
+    '2026-01-05T17:00:00.000Z',
+    '2026-01-18T17:00:00.000Z',
+    '2026-01-19T17:00:00.000Z',
+  ]);
+
+  // Both readings are internally consistent: every occurrence is a Sunday or a
+  // Monday, and the pattern repeats on a 14-day cycle.
+  for (const list of [mondayFirst, sundayFirst]) {
+    for (const start of list) {
+      assert.ok([0, 1].includes(new Date(start).getUTCDay()), `${start} is not a Sun/Mon`);
+    }
+    assert.equal(
+      Date.parse(list[2]!) - Date.parse(list[0]!),
+      14 * 24 * 3600_000,
+      'the cycle is two weeks long whichever day starts the week',
+    );
+  }
+});
+
+test('CR-006: an absent or unknown weekStart falls back to Monday, unchanged from v1.0', () => {
+  const rule: RecurrenceRule = { freq: 'WEEKLY', interval: 2, byWeekday: ['MO', 'FR'] };
+  const baseline = startsOf(expandOccurrences(makeRecurring(rule), WINDOW_JAN));
+
+  const explicitMonday = startsOf(
+    expandOccurrences(makeRecurring({ ...rule, weekStart: 'MO' }), WINDOW_JAN),
+  );
+  assert.deepEqual(explicitMonday, baseline, 'WKST=MO is the default, not a change');
+
+  const garbage = startsOf(
+    expandOccurrences(
+      makeRecurring({ ...rule, weekStart: 'XX' as unknown as RecurrenceRule['weekStart'] }),
+      WINDOW_JAN,
+    ),
+  );
+  assert.deepEqual(garbage, baseline, 'an unusable weekStart is dropped, not honoured');
+});
+
+test('CR-005: location rides along on every occurrence of a series', () => {
+  const list = expandOccurrences(
+    makeRecurring({ freq: 'WEEKLY', interval: 1 }, { location: '  Riverside Fields  ' }),
+    WINDOW_JAN,
+  );
+  assert.ok(list.length >= 4);
+  for (const o of list) assert.equal(o.location, 'Riverside Fields', 'trimmed and carried');
+});
+
+test('CR-005: an occurrence with no location omits the key rather than setting undefined', () => {
+  const [only] = expandOccurrences(makeEvent(), WINDOW_JAN);
+  assert.ok(only !== undefined);
+  assert.equal(Object.hasOwn(only, 'location'), false, 'an undefined key breaks deep-strict equality');
+
+  const blank = expandOccurrences(makeEvent({ location: '   ' }), WINDOW_JAN)[0]!;
+  assert.equal(Object.hasOwn(blank, 'location'), false, 'a blank location is no location');
+});
+
+test('CR-005: an override may relocate a single occurrence', () => {
+  const series = makeRecurring({ freq: 'WEEKLY', interval: 1 }, { location: 'Home Gym' });
+  const moved: EventRecord = makeEvent({
+    id: 'evt-soccer-override',
+    seriesId: series.id,
+    recurrenceId: '2026-01-12T17:00:00.000Z',
+    startsAt: '2026-01-12T19:00:00.000Z',
+    endsAt: '2026-01-12T20:00:00.000Z',
+    location: 'Away Gym',
+  });
+
+  const list = expandOccurrences(series, WINDOW_JAN, { overrides: [moved] });
+  const relocated = list.find((o) => o.isOverride);
+  assert.ok(relocated !== undefined);
+  assert.equal(relocated.location, 'Away Gym');
+  assert.ok(list.filter((o) => !o.isOverride).every((o) => o.location === 'Home Gym'));
+});
+
+test('CR-005: an override with no location of its own inherits the series location', () => {
+  const series = makeRecurring({ freq: 'WEEKLY', interval: 1 }, { location: 'Home Gym' });
+  const rescheduled: EventRecord = makeEvent({
+    id: 'evt-soccer-override',
+    seriesId: series.id,
+    recurrenceId: '2026-01-12T17:00:00.000Z',
+    startsAt: '2026-01-12T19:00:00.000Z',
+    endsAt: '2026-01-12T20:00:00.000Z',
+    location: undefined,
+  });
+  const override = expandOccurrences(series, WINDOW_JAN, { overrides: [rescheduled] })
+    .find((o) => o.isOverride);
+  assert.equal(override?.location, 'Home Gym');
+});
+
+test('CR-007: a series that ends on its own is not reported as truncated', () => {
+  const detailed = expandOccurrencesDetailed(
+    makeRecurring({ freq: 'WEEKLY', interval: 1, count: 3 }),
+    WINDOW_JAN,
+  );
+  assert.equal(detailed.occurrences.length, 3);
+  assert.equal(detailed.truncated, false);
+  assert.equal(detailed.maxOccurrences, DEFAULT_MAX_OCCURRENCES);
+});
+
+test('CR-007: hitting the cap exactly is still reported as truncated when more exist', () => {
+  const daily = makeRecurring({ freq: 'DAILY', interval: 1 });
+  const window = { from: '2026-01-01T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' };
+
+  const cut = expandOccurrencesDetailed(daily, window, { maxOccurrences: 5 });
+  assert.equal(cut.occurrences.length, 5, 'the cap is still honoured exactly');
+  assert.equal(cut.truncated, true, 'the caller can tell there is more');
+  assert.equal(cut.maxOccurrences, 5);
+
+  // The boundary case CR-007 was actually about: a series whose length equals
+  // the cap must NOT claim truncation.
+  const exact = expandOccurrencesDetailed(
+    makeRecurring({ freq: 'DAILY', interval: 1, count: 5 }),
+    window,
+    { maxOccurrences: 5 },
+  );
+  assert.equal(exact.occurrences.length, 5);
+  assert.equal(exact.truncated, false);
+});
+
+test('CR-007: the list-only form returns exactly the detailed form’s occurrences', () => {
+  const daily = makeRecurring({ freq: 'DAILY', interval: 1 });
+  const window = { from: '2026-01-01T00:00:00.000Z', to: '2026-03-01T00:00:00.000Z' };
+  for (const max of [1, 7, 40]) {
+    assert.deepEqual(
+      expandOccurrences(daily, window, { maxOccurrences: max }),
+      expandOccurrencesDetailed(daily, window, { maxOccurrences: max }).occurrences,
+      `the two entry points disagree at cap ${max}`,
+    );
+  }
+});
+
+test('CR-007: staging one row past the cap does not disturb which rows survive', () => {
+  const daily = makeRecurring({ freq: 'DAILY', interval: 1 });
+  const window = { from: '2026-01-01T00:00:00.000Z', to: '2026-06-01T00:00:00.000Z' };
+  const capped = expandOccurrences(daily, window, { maxOccurrences: 9 });
+  const generous = expandOccurrences(daily, window, { maxOccurrences: 400 });
+  assert.deepEqual(capped, generous.slice(0, 9), 'the cap must be a prefix, not a resample');
 });

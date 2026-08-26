@@ -16,6 +16,7 @@ export const AGENTS: SwarmAgent[] = [
     owns: [
       'lib/contracts/**',
       'tools/swarm/**',
+      '.github/**',
       'docs/**',
       'package.json',
       'package-lock.json',
@@ -58,9 +59,49 @@ export const AGENTS: SwarmAgent[] = [
     id: 'ai-actions',
     letter: 'H',
     name: 'AI Scheduling Agent',
-    owns: ['domains/ai/**', 'tests/unit/ai-validator.test.ts'],
+    owns: [
+      'domains/ai/**',
+      'tests/unit/ai-validator.test.ts',
+      'tests/unit/ai-inbox.test.ts',
+      'tests/unit/ai-brief.test.ts',
+    ],
     dependsOn: ['orchestrator'],
     phase: 'C-domains',
+  },
+
+  /* -- Phase C2: the experience layer, built on the frozen v1.1 contracts -- */
+
+  {
+    id: 'personal-organization',
+    letter: 'I',
+    name: 'Personal Organization Agent',
+    owns: ['domains/personal/**', 'tests/unit/personal.test.ts'],
+    dependsOn: ['orchestrator', 'household-auth'],
+    phase: 'C2-experiences',
+  },
+  {
+    id: 'business-staffing',
+    letter: 'J1',
+    name: 'Shia Baby Staffing Agent',
+    owns: ['domains/shia-baby/staffing.ts', 'tests/unit/staffing.test.ts'],
+    dependsOn: ['orchestrator', 'conflict-engine'],
+    phase: 'C2-experiences',
+  },
+  {
+    id: 'business-ledger',
+    letter: 'J2',
+    name: 'Shia Baby Ledger Agent',
+    owns: ['domains/shia-baby/ledger.ts', 'tests/unit/ledger.test.ts'],
+    dependsOn: ['orchestrator'],
+    phase: 'C2-experiences',
+  },
+  {
+    id: 'platform',
+    letter: 'K',
+    name: 'Search / Notifications Agent',
+    owns: ['domains/platform/**', 'tests/unit/platform.test.ts'],
+    dependsOn: ['orchestrator', 'household-auth'],
+    phase: 'C2-experiences',
   },
 ];
 

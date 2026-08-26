@@ -62,18 +62,25 @@ const ALL: readonly Member[] = [owner, adult, teen, child, employee, viewer];
 /** Independent restatement of the expected role -> permission grants. */
 const EXPECTED: Record<Role, readonly Permission[]> = {
   owner: [
-    'event.read', 'event.create', 'event.update.own', 'event.update.any', 'event.delete',
+    'event.read', 'event.create', 'event.update.own', 'event.update.any',
+    'event.delete.own', 'event.delete.any',
+    'reminder.complete.own', 'reminder.snooze.own', 'reminder.manage.any',
     'member.manage', 'household.manage',
     'business.read', 'business.manage', 'employee.schedule',
     'finance.read', 'finance.manage',
     'ai.propose', 'ai.execute.autonomous',
   ],
   adult: [
-    'event.read', 'event.create', 'event.update.own', 'event.update.any', 'event.delete',
+    'event.read', 'event.create', 'event.update.own', 'event.update.any',
+    'event.delete.own', 'event.delete.any',
+    'reminder.complete.own', 'reminder.snooze.own', 'reminder.manage.any',
     'member.manage', 'business.read', 'finance.read', 'ai.propose',
   ],
-  teen: ['event.read', 'event.create', 'event.update.own', 'ai.propose'],
-  child: ['event.read', 'event.update.own'],
+  teen: [
+    'event.read', 'event.create', 'event.update.own', 'event.delete.own',
+    'reminder.complete.own', 'reminder.snooze.own', 'ai.propose',
+  ],
+  child: ['event.read', 'reminder.complete.own', 'reminder.snooze.own'],
   employee: ['business.read', 'employee.schedule', 'ai.propose'],
   viewer: ['event.read'],
 };
@@ -184,7 +191,7 @@ test('resource belonging to another household is denied even inside the right te
 test('a matching resource household is allowed', () => {
   const result = authorize({
     member: adult,
-    permission: 'event.delete',
+    permission: 'event.delete.any',
     householdId: H1,
     resource: { householdId: H1, createdBy: M_TEEN },
   });
@@ -291,23 +298,110 @@ test('a .any holder may update any record, own or not', () => {
   assert.deepEqual(ownViaAny, { allowed: true }, '.any subsumes .own');
 });
 
-test('a child may act on their own record but not on a sibling’s', () => {
-  const ownRecord = authorize({
+test('a child may complete the reminder assigned to them but not a sibling’s', () => {
+  const ownReminder = authorize({
+    member: child,
+    permission: 'reminder.complete.own',
+    householdId: H1,
+    resource: { householdId: H1, assignedTo: M_CHILD },
+  });
+  assert.deepEqual(ownReminder, { allowed: true });
+
+  const siblingReminder = authorize({
+    member: child,
+    permission: 'reminder.complete.own',
+    householdId: H1,
+    resource: { householdId: H1, assignedTo: M_TEEN },
+  });
+  assert.equal(siblingReminder.allowed, false);
+  assert.equal(siblingReminder.allowed === false && siblingReminder.code, 'permission');
+});
+
+test('reminder ownership is proven by assignment, never by authorship', () => {
+  // CR-001: `Reminder` has no `createdBy`. A child who somehow authored the row
+  // still may not complete it unless it is assigned to them, and a `createdBy`
+  // that happens to match must not be accepted as proof.
+  const authoredNotAssigned = authorize({
+    member: child,
+    permission: 'reminder.complete.own',
+    householdId: H1,
+    resource: { householdId: H1, createdBy: M_CHILD, assignedTo: M_TEEN },
+  });
+  assert.equal(authoredNotAssigned.allowed, false);
+
+  const noAssignee = authorize({
+    member: child,
+    permission: 'reminder.snooze.own',
+    householdId: H1,
+    resource: { householdId: H1, createdBy: M_CHILD },
+  });
+  assert.equal(noAssignee.allowed, false, 'no assignment recorded is no proof of ownership');
+  assert.equal(noAssignee.allowed === false && noAssignee.code, 'permission');
+});
+
+test('the child no longer holds event.update.own as a reminder stand-in (CR-001)', () => {
+  const result = authorize({
     member: child,
     permission: 'event.update.own',
     householdId: H1,
     resource: { householdId: H1, createdBy: M_CHILD },
   });
-  assert.deepEqual(ownRecord, { allowed: true });
+  assert.equal(result.allowed, false, 'a child editing a calendar event is not a v1.1 grant');
+  assert.equal(result.allowed === false && result.code, 'permission');
+});
 
-  const siblingRecord = authorize({
-    member: child,
-    permission: 'event.update.own',
+test('a teen may delete only what they created, an adult may delete anything (CR-002)', () => {
+  assert.deepEqual(
+    authorize({
+      member: teen,
+      permission: 'event.delete.own',
+      householdId: H1,
+      resource: { householdId: H1, createdBy: M_TEEN },
+    }),
+    { allowed: true },
+  );
+
+  const someoneElses = authorize({
+    member: teen,
+    permission: 'event.delete.own',
     householdId: H1,
-    resource: { householdId: H1, createdBy: M_TEEN },
+    resource: { householdId: H1, createdBy: M_ADULT },
   });
-  assert.equal(siblingRecord.allowed, false);
-  assert.equal(siblingRecord.allowed === false && siblingRecord.code, 'permission');
+  assert.equal(someoneElses.allowed, false);
+
+  assert.equal(authorize({ member: teen, permission: 'event.delete.any', householdId: H1 }).allowed, false);
+
+  // An adult holds the broader verb, so the `.own` request is satisfied without
+  // any row-level proof at all.
+  assert.deepEqual(
+    authorize({
+      member: adult,
+      permission: 'event.delete.own',
+      householdId: H1,
+      resource: { householdId: H1, createdBy: M_TEEN },
+    }),
+    { allowed: true },
+  );
+});
+
+test('an adult holding reminder.manage.any may complete a child’s reminder', () => {
+  assert.deepEqual(
+    authorize({
+      member: adult,
+      permission: 'reminder.complete.own',
+      householdId: H1,
+      resource: { householdId: H1, assignedTo: M_CHILD },
+    }),
+    { allowed: true },
+  );
+  // …but not across the household boundary, broader verb or not.
+  const crossTenant = authorize({
+    member: adult,
+    permission: 'reminder.complete.own',
+    householdId: H2,
+    resource: { householdId: H2, assignedTo: M_CHILD },
+  });
+  assert.equal(crossTenant.allowed === false && crossTenant.code, 'tenant');
 });
 
 /* ------------------------------------------------- employee privacy boundary */
@@ -332,7 +426,9 @@ test('an employee can still be scheduled and read business data', () => {
 
 test('an employee is locked out of family scheduling, finance and management', () => {
   const forbidden: readonly Permission[] = [
-    'event.read', 'event.create', 'event.update.own', 'event.update.any', 'event.delete',
+    'event.read', 'event.create', 'event.update.own', 'event.update.any',
+    'event.delete.own', 'event.delete.any',
+    'reminder.complete.own', 'reminder.snooze.own', 'reminder.manage.any',
     'member.manage', 'household.manage', 'business.manage',
     'finance.read', 'finance.manage', 'ai.execute.autonomous',
   ];
@@ -401,7 +497,7 @@ test('an adult manages members and reads finance but cannot delete the household
 });
 
 test('a teen has no finance access and no member management', () => {
-  for (const permission of ['finance.read', 'finance.manage', 'member.manage', 'event.delete'] as const) {
+  for (const permission of ['finance.read', 'finance.manage', 'member.manage', 'event.delete.any'] as const) {
     const result = authorize({ member: teen, permission, householdId: H1 });
     assert.equal(result.allowed, false, `teen allowed ${permission}`);
   }

@@ -20,7 +20,15 @@ import type { GauntletReport, Phase, SwarmAgent } from './types.ts';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
-const PHASE_ORDER: Phase[] = ['A-contracts', 'B-foundations', 'C-domains', 'D-integration', 'E-gauntlet', 'F-repair'];
+const PHASE_ORDER: Phase[] = [
+  'A-contracts',
+  'B-foundations',
+  'C-domains',
+  'C2-experiences',
+  'D-integration',
+  'E-gauntlet',
+  'F-repair',
+];
 
 async function exists(rel: string): Promise<boolean> {
   try {

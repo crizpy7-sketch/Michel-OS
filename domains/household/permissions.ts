@@ -41,12 +41,13 @@ import {
  *            the AI act autonomously.
  *   adult    full family scheduling and member management, business/finance
  *            READ only, no household-level destruction (no `household.manage`).
- *   teen     read the family calendar, create events, edit only what they
- *            created. No finance, no member management, no deletion.
- *   child    read only. `event.update.own` is present solely so a child can
- *            complete/act on records they own (e.g. their own reminders);
- *            the `.own` gate in `authorize` means it can never touch another
- *            member's row. See KNOWN LIMITATIONS in the module docs below.
+ *   teen     read the family calendar, create events, and edit or delete only
+ *            what they created. No finance, no member management.
+ *   child    read the calendar, and complete or snooze the reminders assigned
+ *            to them — nothing else. Contract v1.1 gave reminders their own
+ *            verbs (CR-001), so the child no longer holds `event.update.own`
+ *            as a stand-in for reminder access; that grant was a lie about
+ *            intent and it is gone.
  *   employee Shia Baby business/shift scope ONLY. Deliberately has NO
  *            `event.read`: an employee of the business must never be able to
  *            see the family calendar (medical appointments, school, etc.).
@@ -64,7 +65,11 @@ export const ROLE_MATRIX: Readonly<Record<Role, readonly Permission[]>> = Object
     'event.create',
     'event.update.own',
     'event.update.any',
-    'event.delete',
+    'event.delete.own',
+    'event.delete.any',
+    'reminder.complete.own',
+    'reminder.snooze.own',
+    'reminder.manage.any',
     'member.manage',
     'household.manage',
     'business.read',
@@ -81,7 +86,11 @@ export const ROLE_MATRIX: Readonly<Record<Role, readonly Permission[]>> = Object
     'event.create',
     'event.update.own',
     'event.update.any',
-    'event.delete',
+    'event.delete.own',
+    'event.delete.any',
+    'reminder.complete.own',
+    'reminder.snooze.own',
+    'reminder.manage.any',
     'member.manage',
     'business.read',
     'finance.read',
@@ -92,12 +101,16 @@ export const ROLE_MATRIX: Readonly<Record<Role, readonly Permission[]>> = Object
     'event.read',
     'event.create',
     'event.update.own',
+    'event.delete.own',
+    'reminder.complete.own',
+    'reminder.snooze.own',
     'ai.propose',
   ] as const),
 
   child: Object.freeze([
     'event.read',
-    'event.update.own',
+    'reminder.complete.own',
+    'reminder.snooze.own',
   ] as const),
 
   employee: Object.freeze([
@@ -150,14 +163,44 @@ const TENANT_DENIED = 'Cross-household access denied.';
 
 export type DenyCode = 'permission' | 'tenant' | 'inactive';
 
+/**
+ * The row being touched, when there is one.
+ *
+ * `createdBy` proves authorship (events); `assignedTo` proves assignment
+ * (reminders). CR-001: v1.0 had only `createdBy`, so the `.own` test could not
+ * see reminder assignment at all and the reminders module had to layer its own
+ * check on top — which is exactly the sort of second, divergent access rule
+ * this kernel exists to prevent.
+ */
+export interface AuthorizeResource {
+  householdId?: UUID;
+  createdBy?: UUID;
+  assignedTo?: UUID;
+}
+
 export interface AuthorizeInput {
   member: Member;
   /** The tenant the request targets. */
   householdId: UUID;
   permission: Permission;
-  /** The row being touched, when there is one. */
-  resource?: { householdId?: UUID; createdBy?: UUID };
+  resource?: AuthorizeResource;
 }
+
+/**
+ * The `.own` verbs and how each one is proven.
+ *
+ * `broader` is the permission that subsumes this one outright — a holder of it
+ * needs no row-level proof. `provenBy` names the field on the resource that has
+ * to equal the member's id. Both are data rather than branches so that adding a
+ * verb in a later contract version cannot quietly skip the ownership test.
+ */
+const OWNERSHIP_RULES: Readonly<Record<string, { broader: Permission; provenBy: 'createdBy' | 'assignedTo'; noun: string }>> =
+  Object.freeze({
+    'event.update.own': { broader: 'event.update.any', provenBy: 'createdBy', noun: 'update' },
+    'event.delete.own': { broader: 'event.delete.any', provenBy: 'createdBy', noun: 'delete' },
+    'reminder.complete.own': { broader: 'reminder.manage.any', provenBy: 'assignedTo', noun: 'complete' },
+    'reminder.snooze.own': { broader: 'reminder.manage.any', provenBy: 'assignedTo', noun: 'snooze' },
+  });
 
 export type AuthorizeResult =
   | { allowed: true }
@@ -182,7 +225,7 @@ export function can(member: Member, permission: Permission): boolean {
  *   1. tenancy  (member's household, then the resource's household)
  *   2. active   (a deactivated member can do nothing in their own household)
  *   3. permission
- *   4. ownership, for the `event.update.own` / `event.update.any` split
+ *   4. ownership, for every `.own` / broader-verb split (OWNERSHIP_RULES)
  *
  * Tenancy is first so that a cross-household probe always yields the identical
  * `code: 'tenant'` + constant reason, for an owner as much as for a viewer, and
@@ -225,34 +268,39 @@ export function authorize(input: AuthorizeInput): AuthorizeResult {
 
   const granted = grantedTo(member.role);
 
-  /* 4. own vs any, for the event update split. */
-  if (permission === 'event.update.own') {
-    // `.any` is strictly broader than `.own`; a holder of `.any` may act on any
-    // row. Both are listed explicitly in ROLE_MATRIX for the roles that get
-    // them — this is a widening for a superset permission, not a bypass.
-    if (granted.has('event.update.any')) {
+  /* 4. own vs any, for every `.own` verb in OWNERSHIP_RULES. */
+  const rule = OWNERSHIP_RULES[permission];
+  if (rule !== undefined) {
+    // The broader permission is strictly a superset of the `.own` one; a holder
+    // of it may act on any row. Both are listed explicitly in ROLE_MATRIX for
+    // the roles that get them — this is a widening for a superset permission,
+    // not a bypass.
+    if (granted.has(rule.broader)) {
       return { allowed: true };
     }
-    if (!granted.has('event.update.own')) {
+    if (!granted.has(permission)) {
       return {
         allowed: false,
-        reason: `Role "${String(member.role)}" lacks permission "event.update.own".`,
+        reason: `Role "${String(member.role)}" lacks permission "${String(permission)}".`,
         code: 'permission',
       };
     }
     // Ownership must be proven by the row itself. No row, no proof, no access.
-    const createdBy: unknown = resource?.createdBy;
-    if (!isNonEmptyId(member.id) || !isNonEmptyId(createdBy)) {
+    const claimant: unknown = resource?.[rule.provenBy];
+    if (!isNonEmptyId(member.id) || !isNonEmptyId(claimant)) {
       return {
         allowed: false,
         reason: 'Ownership of the target record could not be established.',
         code: 'permission',
       };
     }
-    if (createdBy !== member.id) {
+    if (claimant !== member.id) {
       return {
         allowed: false,
-        reason: 'Only the member who created this record may update it.',
+        reason:
+          rule.provenBy === 'createdBy'
+            ? `Only the member who created this record may ${rule.noun} it.`
+            : `Only the member this record is assigned to may ${rule.noun} it.`,
         code: 'permission',
       };
     }
@@ -275,10 +323,10 @@ export function authorize(input: AuthorizeInput): AuthorizeResult {
  * one tenant. Returns a pure predicate; a cross-tenant or inactive member
  * simply yields `false` for every permission.
  *
- * Resource-scoped decisions (the `event.update.own` ownership check) cannot be
- * answered by the oracle — it has no row — so `event.update.own` reports true
- * only for members who also hold `event.update.any`. Call `authorize()` with
- * the resource for the real decision.
+ * Resource-scoped decisions cannot be answered by the oracle — it has no row —
+ * so every `.own` verb in OWNERSHIP_RULES reports true only for members who
+ * also hold the broader verb that subsumes it. Call `authorize()` with the
+ * resource for the real decision.
  */
 export function permissionOracle(
   member: Member,
