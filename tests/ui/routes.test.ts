@@ -11,24 +11,28 @@ test('every client route points at a real view module', async () => {
   const modules = [...source.matchAll(/import\('([^']*views\/[^']+\.js)'\)/g)].map((match) => match[1]!);
 
   assert.ok(modules.length >= 10, 'expected the router to contain the Michel OS view modules');
-  assert.equal(new Set(modules).size, modules.length, 'route imports should not be duplicated accidentally');
-
-  for (const specifier of modules) {
+  // Several routes intentionally share one view: Shopping/Errands/Reminders use
+  // lists.js and every Shia Baby sub-route uses business.js. What matters is
+  // that every referenced module exists, not that every route has a unique file.
+  for (const specifier of new Set(modules)) {
     const path = resolve(root, 'public', specifier.replace(/^\.\//, ''));
     await assert.doesNotReject(access(path), `missing route module ${specifier}`);
   }
 });
 
-test('all browser view modules are valid JavaScript', async () => {
-  const dir = resolve(root, 'public/views');
-  const files = (await readdir(dir)).filter((name) => name.endsWith('.js')).sort();
-  assert.ok(files.length >= 12, 'expected the completed V1 view set');
+const viewDir = resolve(root, 'public/views');
+const viewFiles = (await readdir(viewDir)).filter((name) => name.endsWith('.js')).sort();
 
-  for (const file of files) {
-    const checked = spawnSync(process.execPath, ['--check', resolve(dir, file)], { encoding: 'utf8' });
-    assert.equal(checked.status, 0, `${file} has invalid JavaScript:\n${checked.stderr}`);
-  }
+test('completed V1 view set is present', () => {
+  assert.ok(viewFiles.length >= 12, 'expected the completed V1 view set');
 });
+
+for (const file of viewFiles) {
+  test(`browser view parses: ${file}`, () => {
+    const checked = spawnSync(process.execPath, ['--check', resolve(viewDir, file)], { encoding: 'utf8' });
+    assert.equal(checked.status, 0, `${file} has invalid JavaScript:\n${checked.stderr}`);
+  });
+}
 
 test('VPS deployment bundle contains the required production pieces', async () => {
   for (const file of ['Dockerfile', 'compose.yml', 'Caddyfile', '.env.example', 'backup.sh', 'restore.sh', 'README.md']) {
