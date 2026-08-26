@@ -16,6 +16,25 @@ export const ASSISTANT_ACTION_TYPES = [
   'record_expense',
 ] as const satisfies readonly AIActionType[];
 
+const ALLOWED_DOMAINS = [
+  'appointments',
+  'practice',
+  'competition',
+  'games',
+  'school',
+  'errands',
+  'shopping',
+  'reminders',
+  'work',
+  'shia-baby',
+  'inbox',
+  'general',
+] as const;
+
+const CALENDAR_DOMAIN_ALIASES: Readonly<Record<string, (typeof ALLOWED_DOMAINS)[number]>> = Object.freeze({
+  business: 'work',
+});
+
 export interface AssistantProposalContext {
   text: string;
   now: string;
@@ -47,6 +66,8 @@ Rules:
 - Use only ids that appear in the supplied authorized context.
 - Resolve relative dates/times from context.now in context.timezone.
 - For an event, include title, domain, startsAt, endsAt and timezone. Default duration to 60 minutes only when the user gave a start time but no duration/end.
+- The ONLY valid domain values are: ${ALLOWED_DOMAINS.join(', ')}.
+- Personal job/work schedules use domain "work". Never use "business" as a domain. Shia Baby employee/store operations use domain "shia-baby".
 - For a recurring event, use create_recurring_schedule and include a recurrence object.
 - For a reminder, a dueAt is required. If the user did not provide enough timing detail, choose classify_inbox_item.
 - For shopping, use add_shopping_item. For a physical trip/task, use create_errand.
@@ -139,18 +160,42 @@ export async function proposeWithOpenAI(context: AssistantProposalContext): Prom
 
     return {
       model,
-      proposal: {
+      proposal: normalizeProviderProposal({
         type: type as AIActionType,
         payload: parsedPayload,
         confidence,
         ...(typeof rationale === 'string' && rationale.trim().length > 0
           ? { rationale: rationale.trim().slice(0, 500) }
           : {}),
-      },
+      }),
     };
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Normalize only narrow, deterministic provider synonyms before the frozen
+ * validator sees the proposal. This is not a permissive repair layer: unknown
+ * domains remain untouched so the validator can reject them.
+ */
+export function normalizeProviderProposal(proposal: AIActionProposal): AIActionProposal {
+  if (proposal.type !== 'create_event' && proposal.type !== 'create_recurring_schedule') return proposal;
+
+  const domain = proposal.payload['domain'];
+  if (typeof domain !== 'string') return proposal;
+  if ((ALLOWED_DOMAINS as readonly string[]).includes(domain)) return proposal;
+
+  const normalized = CALENDAR_DOMAIN_ALIASES[domain.trim().toLowerCase()];
+  if (normalized === undefined) return proposal;
+
+  return {
+    ...proposal,
+    payload: {
+      ...proposal.payload,
+      domain: normalized,
+    },
+  };
 }
 
 function boundContext(context: AssistantProposalContext): Record<string, unknown> {
