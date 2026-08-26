@@ -13,6 +13,8 @@ import type { EventRecord, Occurrence } from '../../../lib/contracts/index.ts';
 const HH = '11111111-1111-4111-8111-111111111111';
 const CONFLICT_BUDGET_MS = 1500;
 const RECURRENCE_BUDGET_MS = 750;
+const SEARCH_BUDGET_MS = 400;
+const STAFFING_BUDGET_MS = 750;
 
 function syntheticLoad(n: number): {
   occurrences: Occurrence[];
@@ -128,6 +130,102 @@ export async function run(): Promise<ProbeOutcome> {
           'core-scheduling',
           elapsed < RECURRENCE_BUDGET_MS && out.length <= 1000,
           `10-year unbounded daily rule produced ${out.length} occurrences in ${Math.round(elapsed)}ms (cap 1000, budget ${RECURRENCE_BUDGET_MS}ms)`,
+        ),
+      );
+    }
+  }
+
+
+  /* --------------------------------------- Phase C2: the experience layer */
+
+  const searchMod = await tryImport('../../../domains/platform/search.ts');
+  if ('error' in searchMod) {
+    missing.push({ module: 'domains/platform/search.ts', owner: 'platform', reason: searchMod.error });
+  } else {
+    const SearchIndex = searchMod.mod.SearchIndex as { build: (docs: unknown[]) => unknown } | undefined;
+    const search = searchMod.mod.search as
+      | ((index: unknown, q: string, m: unknown, h: string, o?: Record<string, unknown>) => unknown[])
+      | undefined;
+
+    if (typeof search === 'function' && SearchIndex !== undefined) {
+      const owner = { id: 'm-1', householdId: HH, userId: null, displayName: 'Owner', role: 'owner', color: 'brand.primary', active: true };
+      // A household that has been running for a few years, not a demo.
+      const docs = Array.from({ length: 20_000 }, (_, i) => ({
+        entity: 'event',
+        id: `e-${i}`,
+        householdId: HH,
+        title: i % 5 === 0 ? 'Soccer practice at Riverside' : `Household event ${i}`,
+        body: 'notes about the thing that has to happen',
+        at: `2026-08-${String(1 + (i % 28)).padStart(2, '0')}T12:00:00.000Z`,
+      }));
+
+      const index = SearchIndex.build(docs);
+      const t0 = performance.now();
+      const hits = search(index, 'soccer practice riverside', owner, HH);
+      const elapsed = performance.now() - t0;
+      stats.searchCorpus = docs.length;
+      stats.searchMs = Math.round(elapsed);
+      checks.push(
+        check(
+          'search stays interactive over a real corpus',
+          'platform',
+          elapsed < SEARCH_BUDGET_MS,
+          `${docs.length} documents took ${Math.round(elapsed)}ms (budget ${SEARCH_BUDGET_MS}ms); a search box has to feel instant`,
+        ),
+      );
+      checks.push(
+        check(
+          'search returns a bounded page, not the whole corpus',
+          'platform',
+          hits.length <= 50,
+          `a query matching thousands of rows returned ${hits.length} of them`,
+        ),
+      );
+    }
+  }
+
+  const staffingMod = await tryImport('../../../domains/shia-baby/staffing.ts');
+  if ('error' in staffingMod) {
+    missing.push({ module: 'domains/shia-baby/staffing.ts', owner: 'business-staffing', reason: staffingMod.error });
+  } else {
+    const analyzeSchedule = staffingMod.mod.analyzeSchedule as
+      | ((input: Record<string, unknown>) => { warnings: unknown[] })
+      | undefined;
+
+    if (typeof analyzeSchedule === 'function') {
+      // A year of shifts for a dozen staff. The coverage check must sweep shift
+      // boundaries rather than walking the clock minute by minute.
+      const employees = Array.from({ length: 12 }, (_, i) => ({
+        id: `emp-${i}`, businessId: 'biz', memberId: null, displayName: `Employee ${i}`, hourlyRate: 18, active: true,
+      }));
+      const shifts = Array.from({ length: 6000 }, (_, i) => {
+        const start = new Date(Date.UTC(2026, 0, 1, 8, 0, 0) + Math.floor(i / 12) * 86_400_000 + (i % 12) * 30 * 60_000);
+        return {
+          id: `s-${i}`,
+          businessId: 'biz',
+          employeeId: `emp-${i % 12}`,
+          startsAt: start.toISOString(),
+          endsAt: new Date(start.getTime() + 5 * 3_600_000).toISOString(),
+          status: 'published',
+        };
+      });
+
+      const t0 = performance.now();
+      const analysis = analyzeSchedule({
+        businessId: 'biz',
+        employees,
+        shifts,
+        window: { from: '2026-01-01T00:00:00.000Z', to: '2027-01-01T00:00:00.000Z' },
+      });
+      const elapsed = performance.now() - t0;
+      stats.staffingLoad = shifts.length;
+      stats.staffingMs = Math.round(elapsed);
+      checks.push(
+        check(
+          'schedule analysis survives a year of real shifts',
+          'business-staffing',
+          elapsed < STAFFING_BUDGET_MS,
+          `${shifts.length} shifts produced ${analysis.warnings.length} warnings in ${Math.round(elapsed)}ms (budget ${STAFFING_BUDGET_MS}ms)`,
         ),
       );
     }

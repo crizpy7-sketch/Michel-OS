@@ -75,11 +75,28 @@ interface LocalDay {
   hour: number;
 }
 
-function localDay(ms: number, timezone: TimeZone): LocalDay {
-  const parts = new Intl.DateTimeFormat('en-CA', {
+/** Cached per zone — the brief calls this once per occurrence and reminder. */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timezone: TimeZone): Intl.DateTimeFormat {
+  const cached = FORMATTERS.get(timezone);
+  if (cached !== undefined) return cached;
+  const options: Intl.DateTimeFormatOptions = {
     timeZone: timezone,
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date(ms));
+  };
+  let dtf: Intl.DateTimeFormat;
+  try {
+    dtf = new Intl.DateTimeFormat('en-CA', options);
+  } catch {
+    dtf = new Intl.DateTimeFormat('en-CA', { ...options, timeZone: 'UTC' });
+  }
+  FORMATTERS.set(timezone, dtf);
+  return dtf;
+}
+
+function localDay(ms: number, timezone: TimeZone): LocalDay {
+  const parts = formatterFor(timezone).formatToParts(new Date(ms));
   const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
   return {
     date: `${get('year')}-${get('month')}-${get('day')}`,

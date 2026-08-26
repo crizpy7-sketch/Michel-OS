@@ -19,7 +19,19 @@ import { authorize, permissionOracle } from '../../domains/household/permissions
 import { expandOccurrences } from '../../domains/scheduling/recurrence.ts';
 import { detectConflicts, explainConflict } from '../../domains/scheduling/conflicts.ts';
 import { validateAction } from '../../domains/ai/validator.ts';
-import type { EventRecord, Member, Occurrence } from '../../lib/contracts/index.ts';
+import { classifyInboxItem } from '../../domains/ai/inbox.ts';
+import { buildMorningBrief, summarizeBrief } from '../../domains/ai/brief.ts';
+import { addShoppingItem } from '../../domains/personal/lists.ts';
+import { analyzeSchedule } from '../../domains/shia-baby/staffing.ts';
+import { lowStockAlerts, recordMovement, recordSale } from '../../domains/shia-baby/ledger.ts';
+import { SearchIndex, search } from '../../domains/platform/search.ts';
+import {
+  conflictsDetected,
+  lowStock,
+  materializeNotification,
+  mergeNotifications,
+} from '../../domains/platform/notifications.ts';
+import type { Employee, EventRecord, Member, Occurrence } from '../../lib/contracts/index.ts';
 
 /* ---------------------------------------------------------- a household */
 
@@ -77,6 +89,21 @@ const DENTIST: EventRecord = {
 };
 
 const WEEK = { from: '2026-09-07T00:00:00.000Z', to: '2026-09-14T00:00:00.000Z' };
+
+/** The instant every Phase D2 walk is anchored to. Injected, never read. */
+const NOW = '2026-09-09T13:00:00.000Z';
+
+const BUSINESS = 'b-shia-baby';
+
+/** Riley's other life: the same person, on the shop's payroll. */
+const SHOP_STAFF: Employee = {
+  id: 'emp-riley',
+  businessId: BUSINESS,
+  memberId: SHOP_EMPLOYEE.id,
+  displayName: 'Riley',
+  hourlyRate: 18,
+  active: true,
+};
 
 function familyWeek(): Occurrence[] {
   return [
@@ -281,4 +308,306 @@ test('integration: a teen may schedule, and the schedule they produce still land
     conflicts.some((c) => c.memberIds.includes(TEEN.id)),
     'the study group collides with Wednesday practice and the engine should say so',
   );
+});
+
+/* ================================================================ PHASE D2 ==
+ * The Phase C2 agents join the walk. Five modules that never imported each
+ * other now have to meet: the inbox routes text into the validator, the
+ * validated command becomes a list row, the row becomes a notification, the
+ * notification and the schedule become a morning brief, and the shop's own
+ * roster feeds staffing warnings into the same brief.
+ * ========================================================================== */
+
+test('integration: a sentence typed into the Inbox reaches a saved shopping item', () => {
+  // 1. free text -> proposal (Agent H)
+  const classification = classifyInboxItem(
+    {
+      id: 'inb-1',
+      householdId: HOUSEHOLD,
+      rawText: 'we need milk',
+      capturedBy: MOM.id,
+      capturedAt: NOW,
+      status: 'unclassified',
+    },
+    { householdId: HOUSEHOLD, now: NOW, timezone: 'America/Chicago', members: [MOM, TEEN, CHILD] },
+  );
+  assert.equal(classification.domain, 'shopping');
+
+  // 2. proposal -> verdict (Agent H's validator, on Agent E's kernel)
+  const verdict = validateAction(classification.proposal, {
+    householdId: HOUSEHOLD,
+    actorMemberId: MOM.id,
+    now: NOW,
+    can: permissionOracle(MOM, HOUSEHOLD),
+  });
+  assert.notEqual(verdict.decision, 'reject', JSON.stringify(verdict.errors));
+  assert.ok(verdict.command);
+
+  // 3. command -> row (Agent I), through the same kernel again
+  const saved = addShoppingItem({
+    id: 'si-1',
+    householdId: HOUSEHOLD,
+    actor: MOM,
+    name: String(verdict.command.payload['name']),
+  });
+  assert.equal(saved.ok, true, JSON.stringify(saved));
+  assert.equal(saved.ok === true && saved.value.status, 'needed');
+  assert.equal(saved.ok === true && saved.value.name, 'we need milk');
+});
+
+test('integration: the inbox cannot route around the permission kernel', () => {
+  // The same sentence, from a viewer. The classifier does not know or care who
+  // is asking — every gate downstream still holds.
+  const viewer: Member = { ...MOM, id: 'm-guest', role: 'viewer' };
+  const classification = classifyInboxItem(
+    { id: 'inb-2', householdId: HOUSEHOLD, rawText: 'we need milk', capturedBy: viewer.id, capturedAt: NOW, status: 'unclassified' },
+    { householdId: HOUSEHOLD, now: NOW, timezone: 'America/Chicago' },
+  );
+
+  const saved = addShoppingItem({
+    id: 'si-2',
+    householdId: HOUSEHOLD,
+    actor: viewer,
+    name: String(classification.proposal.payload['name'] ?? 'milk'),
+  });
+  assert.equal(saved.ok, false, 'a read-only guest wrote to the family shopping list');
+});
+
+test('integration: a real conflict becomes exactly one notification, however often it is re-detected', () => {
+  const conflicts = detectConflicts({
+    householdId: HOUSEHOLD,
+    occurrences: familyWeek(),
+    participants: [
+      { eventId: PRACTICE.id, memberId: MOM.id, role: 'responsible' },
+      { eventId: DENTIST.id, memberId: MOM.id, role: 'responsible' },
+    ],
+    memberNames: { [MOM.id]: 'Michel' },
+  });
+  const real = conflicts.filter((c) => c.severity !== 'info');
+  assert.ok(real.length > 0, 'the fixture week is supposed to contain a genuine clash');
+
+  // Agent G's conflicts feed Agent K's notification centre.
+  const drafts = conflictsDetected(real, HOUSEHOLD, NOW);
+  assert.ok(drafts.length > 0);
+
+  const first = mergeNotifications([], drafts);
+  const persisted = first.created.map((draft, i) => materializeNotification(`n-${i}`, draft));
+
+  // Re-detect from scratch, as a page load would, and merge again.
+  const redetected = detectConflicts({
+    householdId: HOUSEHOLD,
+    occurrences: familyWeek(),
+    participants: [
+      { eventId: PRACTICE.id, memberId: MOM.id, role: 'responsible' },
+      { eventId: DENTIST.id, memberId: MOM.id, role: 'responsible' },
+    ],
+    memberNames: { [MOM.id]: 'Michel' },
+  }).filter((c) => c.severity !== 'info');
+
+  const second = mergeNotifications(persisted, conflictsDetected(redetected, HOUSEHOLD, NOW));
+  assert.deepEqual(second.created, [], 'the same conflict notified the family twice');
+  assert.equal(second.unchanged.length, persisted.length);
+});
+
+test('integration: the morning brief assembles what four other agents produced', () => {
+  const occurrences = familyWeek();
+  const conflicts = detectConflicts({
+    householdId: HOUSEHOLD,
+    occurrences,
+    participants: [
+      { eventId: PRACTICE.id, memberId: MOM.id, role: 'responsible' },
+      { eventId: DENTIST.id, memberId: MOM.id, role: 'responsible' },
+    ],
+    memberNames: { [MOM.id]: 'Michel' },
+  });
+
+  // Agent J1's warnings, from the shop's own roster.
+  const analysis = analyzeSchedule({
+    businessId: BUSINESS,
+    employees: [SHOP_STAFF],
+    shifts: [
+      {
+        id: 'sh-1',
+        businessId: BUSINESS,
+        employeeId: SHOP_STAFF.id,
+        startsAt: '2026-09-09T15:00:00.000Z',
+        endsAt: '2026-09-09T19:00:00.000Z',
+        status: 'published',
+      },
+    ],
+    window: { from: '2026-09-07T00:00:00.000Z', to: '2026-09-14T00:00:00.000Z' },
+  });
+  assert.ok(analysis.warnings.length > 0, 'a lone four-hour shift cannot cover a trading day');
+
+  const brief = buildMorningBrief({
+    householdId: HOUSEHOLD,
+    now: '2026-09-09T13:00:00.000Z', // Wednesday, 8am America/Chicago
+    timezone: 'America/Chicago',
+    memberName: 'Michel',
+    occurrences,
+    conflicts,
+    staffingWarnings: analysis.warnings.map((w) => w.message),
+    shoppingItems: [
+      { id: 'si-1', householdId: HOUSEHOLD, listName: 'Household', name: 'Milk', quantity: 1, status: 'needed' },
+    ],
+  });
+
+  assert.equal(brief.greeting, 'Good morning, Michel.');
+  assert.equal(brief.date, '2026-09-09');
+  assert.ok(brief.today.length >= 2, 'Wednesday has both the practice and the dentist on it');
+  assert.ok(brief.conflicts.length > 0, 'the clash the conflict engine found reaches the brief');
+  assert.equal(brief.conflicts[0]!.severity, 'blocking', 'the worst one leads');
+  assert.ok(brief.staffingWarnings.length > 0);
+  assert.equal(brief.shoppingCount, 1);
+
+  // The brief must be readable by a person, not a dump of ids.
+  const summary = summarizeBrief(brief);
+  assert.match(summary, /event/);
+  assert.equal(/[0-9a-f]{8}-[0-9a-f]{4}/.test(summary), false, `ids leaked into the summary: ${summary}`);
+});
+
+test('integration: the shop employee is walled off from the family in search too', () => {
+  const occurrences = familyWeek();
+  const index = SearchIndex.build([
+    ...occurrences.map((o) => ({
+      entity: 'event' as const,
+      id: `${o.eventId}@${o.occurrenceStart}`,
+      householdId: HOUSEHOLD,
+      title: o.title,
+      domain: o.domain,
+      at: o.occurrenceStart,
+    })),
+    {
+      entity: 'employee' as const,
+      id: SHOP_STAFF.id,
+      householdId: HOUSEHOLD,
+      title: SHOP_STAFF.displayName,
+      businessId: BUSINESS,
+    },
+  ]);
+
+  // The owner finds the dentist; the employee does not — and the employee can
+  // still find the roster they are legitimately part of.
+  assert.ok(search(index, 'dentist', MOM, HOUSEHOLD).length > 0);
+  assert.deepEqual(search(index, 'dentist', SHOP_EMPLOYEE, HOUSEHOLD, { businessId: BUSINESS }), []);
+  assert.ok(search(index, 'riley', SHOP_EMPLOYEE, HOUSEHOLD, { businessId: BUSINESS }).length > 0);
+});
+
+test('integration: a shift and an event collide, and the same fact reaches the shop and the family', () => {
+  // Riley works the register while their own child's practice runs.
+  const shift = {
+    id: 'sh-clash',
+    businessId: BUSINESS,
+    employeeId: SHOP_STAFF.id,
+    startsAt: '2026-09-09T20:30:00.000Z',
+    endsAt: '2026-09-09T23:00:00.000Z',
+    status: 'published' as const,
+  };
+
+  // Agent G sees it as a `work` conflict on the family side…
+  const conflicts = detectConflicts({
+    householdId: HOUSEHOLD,
+    occurrences: familyWeek(),
+    participants: [{ eventId: PRACTICE.id, memberId: SHOP_EMPLOYEE.id, role: 'responsible' }],
+    shifts: [shift],
+    employeeMemberIds: { [SHOP_STAFF.id]: SHOP_EMPLOYEE.id },
+    memberNames: { [SHOP_EMPLOYEE.id]: 'Riley' },
+  });
+  const work = conflicts.find((c) => c.kind === 'work');
+  assert.ok(work, 'a shift over a practice the same adult is responsible for is a work conflict');
+
+  // …and CR-004 means the shop side can tell which ref is the shift.
+  const shiftRefs = work.occurrenceRefs.filter((r) => r.kind === 'shift');
+  assert.deepEqual(shiftRefs.map((r) => r.id), ['sh-clash']);
+
+  // Agent J1 reports the same fact to the manager, from the family obligation
+  // the conflict engine identified — one source, two audiences.
+  const analysis = analyzeSchedule({
+    businessId: BUSINESS,
+    employees: [SHOP_STAFF],
+    shifts: [shift],
+    window: { from: '2026-09-07T00:00:00.000Z', to: '2026-09-14T00:00:00.000Z' },
+    familyObligations: [
+      {
+        employeeId: SHOP_STAFF.id,
+        startsAt: '2026-09-09T21:00:00.000Z',
+        endsAt: '2026-09-09T22:00:00.000Z',
+        title: 'Soccer practice',
+      },
+    ],
+  });
+  assert.ok(analysis.warnings.some((w) => w.code === 'family_conflict'));
+});
+
+test('integration: a sale moves stock, and running out reaches the family as one notification', () => {
+  const teddy = {
+    id: 'p-bear',
+    businessId: BUSINESS,
+    sku: 'BEAR-01',
+    name: 'Classic teddy',
+    quantityOnHand: 2,
+    reorderPoint: 4,
+    unitCost: 500,
+    unitPrice: 1200,
+  };
+
+  const sale = recordSale({
+    id: 'sale-1',
+    businessId: BUSINESS,
+    actor: MOM,
+    householdId: HOUSEHOLD,
+    at: NOW,
+    items: [{ productId: teddy.id, quantity: 2, unitPriceCents: 1200 }],
+  });
+  assert.equal(sale.ok, true, JSON.stringify(sale));
+  assert.equal(sale.ok === true && sale.value.totalCents, 2400);
+
+  // The sale's movement is applied through the same ledger that guards stock.
+  const movement = sale.ok === true ? sale.value.movements[0]! : null;
+  assert.ok(movement);
+  const applied = recordMovement({
+    id: 'mv-1',
+    businessId: BUSINESS,
+    product: teddy,
+    actor: MOM,
+    householdId: HOUSEHOLD,
+    kind: movement.kind,
+    quantityDelta: movement.quantityDelta,
+    at: movement.at,
+  });
+  assert.equal(applied.ok, true, JSON.stringify(applied));
+  const sold = applied.ok === true ? applied.value.product : teddy;
+  assert.equal(sold.quantityOnHand, 0);
+
+  // Agent J2's alert becomes Agent K's notification, once.
+  const alerts = lowStockAlerts(BUSINESS, [sold]);
+  assert.deepEqual(alerts.map((a) => a.severity), ['blocking']);
+
+  const first = mergeNotifications([], lowStock(alerts, HOUSEHOLD, NOW));
+  const persisted = first.created.map((d, i) => materializeNotification(`n-low-${i}`, d));
+  const second = mergeNotifications(persisted, lowStock(alerts, HOUSEHOLD, '2026-09-10T13:00:00.000Z'));
+  assert.deepEqual(second.created, [], 'the same empty shelf notified twice');
+});
+
+test('integration: the whole walk stays deterministic across two independent runs', () => {
+  const run = () => {
+    const occurrences = familyWeek();
+    const conflicts = detectConflicts({
+      householdId: HOUSEHOLD,
+      occurrences,
+      participants: [
+        { eventId: PRACTICE.id, memberId: MOM.id, role: 'responsible' },
+        { eventId: DENTIST.id, memberId: MOM.id, role: 'responsible' },
+      ],
+      memberNames: { [MOM.id]: 'Michel' },
+    });
+    return buildMorningBrief({
+      householdId: HOUSEHOLD,
+      now: '2026-09-09T13:00:00.000Z',
+      timezone: 'America/Chicago',
+      occurrences,
+      conflicts,
+    });
+  };
+  assert.deepEqual(run(), run());
 });

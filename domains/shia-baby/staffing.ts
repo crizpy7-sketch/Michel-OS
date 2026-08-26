@@ -58,9 +58,20 @@ function parseInstant(value: unknown): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** Local wall-clock fields for an instant in a named zone. */
-function zoned(ms: number, timezone: string): { weekday: Weekday; minuteOfDay: number; date: string } {
-  const parts = new Intl.DateTimeFormat('en-US', {
+/**
+ * Formatter cache.
+ *
+ * `Intl.DateTimeFormat` construction dominates everything else this module
+ * does — a year of shifts calls `zoned` tens of thousands of times, and
+ * building a fresh formatter each time turned a sub-second analysis into a
+ * two-second one. The performance probe caught it; this is the fix.
+ */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timezone: string): Intl.DateTimeFormat {
+  const cached = FORMATTERS.get(timezone);
+  if (cached !== undefined) return cached;
+  const options: Intl.DateTimeFormatOptions = {
     timeZone: timezone,
     weekday: 'short',
     year: 'numeric',
@@ -69,7 +80,22 @@ function zoned(ms: number, timezone: string): { weekday: Weekday; minuteOfDay: n
     hour: '2-digit',
     minute: '2-digit',
     hourCycle: 'h23',
-  }).formatToParts(new Date(ms));
+  };
+  // An unusable zone falls back to UTC rather than throwing: a bad timezone
+  // string is bad data, and bad data must not take the schedule down.
+  let dtf: Intl.DateTimeFormat;
+  try {
+    dtf = new Intl.DateTimeFormat('en-US', options);
+  } catch {
+    dtf = new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' });
+  }
+  FORMATTERS.set(timezone, dtf);
+  return dtf;
+}
+
+/** Local wall-clock fields for an instant in a named zone. */
+function zoned(ms: number, timezone: string): { weekday: Weekday; minuteOfDay: number; date: string } {
+  const parts = formatterFor(timezone).formatToParts(new Date(ms));
 
   const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
   const short = get('weekday').toUpperCase().slice(0, 2) as Weekday;

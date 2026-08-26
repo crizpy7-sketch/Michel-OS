@@ -54,15 +54,34 @@ function isWholeCents(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value);
 }
 
-/** Local calendar date (YYYY-MM-DD) for an instant, in the business timezone. */
-function localDate(ms: number, timezone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', {
+/**
+ * Cached per zone: a monthly rollup buckets every sale, and constructing a
+ * formatter per row is the single most expensive thing in this file.
+ */
+const DATE_FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function dateFormatterFor(timezone: string): Intl.DateTimeFormat {
+  const cached = DATE_FORMATTERS.get(timezone);
+  if (cached !== undefined) return cached;
+  const options: Intl.DateTimeFormatOptions = {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date(ms));
-  return parts; // en-CA renders exactly YYYY-MM-DD
+  };
+  let dtf: Intl.DateTimeFormat;
+  try {
+    dtf = new Intl.DateTimeFormat('en-CA', options);
+  } catch {
+    dtf = new Intl.DateTimeFormat('en-CA', { ...options, timeZone: 'UTC' });
+  }
+  DATE_FORMATTERS.set(timezone, dtf);
+  return dtf;
+}
+
+/** Local calendar date (YYYY-MM-DD) for an instant, in the business timezone. */
+function localDate(ms: number, timezone: string): string {
+  return dateFormatterFor(timezone).format(new Date(ms)); // en-CA renders exactly YYYY-MM-DD
 }
 
 function financeGate(

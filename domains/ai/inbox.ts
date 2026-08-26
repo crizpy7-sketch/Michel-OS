@@ -125,16 +125,37 @@ const WEEKDAY_INDEX: Readonly<Record<Weekday, number>> = Object.freeze({
 
 const DEFAULT_DURATION_MINUTES = 60;
 
-/** Local wall-clock fields of an instant in a zone. */
-function zonedFields(ms: number, timezone: TimeZone): {
-  year: number; month: number; day: number; hour: number; minute: number; weekdayIndex: number;
-} {
-  const parts = new Intl.DateTimeFormat('en-US', {
+/**
+ * Cached per zone. `instantFromZoned` makes several passes per item, so a fresh
+ * formatter per call would dominate a batch inbox import.
+ */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timezone: TimeZone): Intl.DateTimeFormat {
+  const cached = FORMATTERS.get(timezone);
+  if (cached !== undefined) return cached;
+  const options: Intl.DateTimeFormatOptions = {
     timeZone: timezone,
     year: 'numeric', month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', weekday: 'short',
     hourCycle: 'h23',
-  }).formatToParts(new Date(ms));
+  };
+  let dtf: Intl.DateTimeFormat;
+  try {
+    dtf = new Intl.DateTimeFormat('en-US', options);
+  } catch {
+    // A household with a corrupt timezone still gets sensible routing.
+    dtf = new Intl.DateTimeFormat('en-US', { ...options, timeZone: 'UTC' });
+  }
+  FORMATTERS.set(timezone, dtf);
+  return dtf;
+}
+
+/** Local wall-clock fields of an instant in a zone. */
+function zonedFields(ms: number, timezone: TimeZone): {
+  year: number; month: number; day: number; hour: number; minute: number; weekdayIndex: number;
+} {
+  const parts = formatterFor(timezone).formatToParts(new Date(ms));
   const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '0';
   const shortDay = (parts.find((p) => p.type === 'weekday')?.value ?? 'Mon').toUpperCase().slice(0, 2) as Weekday;
   return {

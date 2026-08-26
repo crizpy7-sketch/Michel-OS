@@ -308,5 +308,208 @@ export async function run(): Promise<ProbeOutcome> {
     }
   }
 
+
+  /* --------------------------------------- Phase C2: the experience layer */
+
+  /*
+   * The C2 agents all funnel access through the same kernel, which is exactly
+   * the claim worth attacking: a module that quietly decided access locally
+   * would pass its own unit tests and fail here.
+   */
+
+  const personalMod = await tryImport('../../../domains/personal/lists.ts');
+  if ('error' in personalMod) {
+    missing.push({ module: 'domains/personal/lists.ts', owner: 'personal-organization', reason: personalMod.error });
+  } else {
+    const completeReminder = personalMod.mod.completeReminder as
+      | ((r: unknown, m: Member, o: { now: string }) => { ok: boolean; issues?: Array<{ code: string }> })
+      | undefined;
+
+    if (typeof completeReminder !== 'function') {
+      checks.push(check('completeReminder() exported', 'personal-organization', false, 'lists.ts does not export completeReminder()'));
+    } else {
+      const foreign = {
+        id: 'rm-x', householdId: HOUSEHOLD_B, title: 'Theirs',
+        dueAt: '2026-08-24T15:00:00.000Z', status: 'pending', assignedTo: 'm-owner',
+      };
+      const crossTenant = completeReminder(foreign, member(), { now: '2026-08-24T16:00:00.000Z' });
+      checks.push(
+        check(
+          'reminder in another household cannot be completed',
+          'personal-organization',
+          crossTenant.ok === false && (crossTenant.issues ?? []).some((i) => i.code === 'tenant'),
+          `an owner of A completed a reminder in B; got ${JSON.stringify(crossTenant)}`,
+        ),
+      );
+
+      const siblings = completeReminder(
+        { id: 'rm-y', householdId: HOUSEHOLD_A, title: 'Not yours', dueAt: '2026-08-24T15:00:00.000Z', status: 'pending', assignedTo: 'm-teen' },
+        member({ id: 'm-kid', role: 'child' }),
+        { now: '2026-08-24T16:00:00.000Z' },
+      );
+      checks.push(
+        check(
+          'a child cannot complete a sibling reminder',
+          'personal-organization',
+          siblings.ok === false,
+          `reminder ownership must come from assignment, not from being in the household; got ${JSON.stringify(siblings)}`,
+        ),
+      );
+    }
+  }
+
+  const staffingMod = await tryImport('../../../domains/shia-baby/staffing.ts');
+  if ('error' in staffingMod) {
+    missing.push({ module: 'domains/shia-baby/staffing.ts', owner: 'business-staffing', reason: staffingMod.error });
+  } else {
+    const assignShift = staffingMod.mod.assignShift as
+      | ((input: Record<string, unknown>) => { ok: boolean; issues?: Array<{ code: string }> })
+      | undefined;
+
+    if (typeof assignShift !== 'function') {
+      checks.push(check('assignShift() exported', 'business-staffing', false, 'staffing.ts does not export assignShift()'));
+    } else {
+      // CR-008: business scope is distinct from household scope, so a row from
+      // another shop must not be schedulable even by a legitimate owner.
+      const foreignShop = assignShift({
+        shift: { id: 's-1', businessId: 'biz-rival', employeeId: null, startsAt: '2026-08-24T13:00:00.000Z', endsAt: '2026-08-24T18:00:00.000Z', status: 'draft' },
+        employee: { id: 'emp-1', businessId: 'biz-ours', memberId: null, displayName: 'Maria', hourlyRate: 18, active: true },
+        actor: member(),
+        householdId: HOUSEHOLD_A,
+        businessId: 'biz-ours',
+      });
+      checks.push(
+        check(
+          'a shift from another business cannot be assigned',
+          'business-staffing',
+          foreignShop.ok === false && (foreignShop.issues ?? []).some((i) => i.code === 'tenant'),
+          `cross-business escape; got ${JSON.stringify(foreignShop)}`,
+        ),
+      );
+
+      const viewerAssigns = assignShift({
+        shift: { id: 's-1', businessId: 'biz-ours', employeeId: null, startsAt: '2026-08-24T13:00:00.000Z', endsAt: '2026-08-24T18:00:00.000Z', status: 'draft' },
+        employee: { id: 'emp-1', businessId: 'biz-ours', memberId: null, displayName: 'Maria', hourlyRate: 18, active: true },
+        actor: member({ id: 'm-viewer', role: 'viewer' }),
+        householdId: HOUSEHOLD_A,
+        businessId: 'biz-ours',
+      });
+      checks.push(
+        check(
+          'a viewer cannot schedule paid shifts',
+          'business-staffing',
+          viewerAssigns.ok === false,
+          `got ${JSON.stringify(viewerAssigns)}`,
+        ),
+      );
+    }
+  }
+
+  const ledgerMod = await tryImport('../../../domains/shia-baby/ledger.ts');
+  if ('error' in ledgerMod) {
+    missing.push({ module: 'domains/shia-baby/ledger.ts', owner: 'business-ledger', reason: ledgerMod.error });
+  } else {
+    const estimateTaxSetAside = ledgerMod.mod.estimateTaxSetAside as
+      | ((input: Record<string, unknown>) => { ok: boolean; value?: { label: string; disclaimer: string }; issues?: Array<{ code: string }> })
+      | undefined;
+
+    if (typeof estimateTaxSetAside !== 'function') {
+      checks.push(check('estimateTaxSetAside() exported', 'business-ledger', false, 'ledger.ts does not export estimateTaxSetAside()'));
+    } else {
+      const business = { id: 'biz-ours', householdId: HOUSEHOLD_A, name: 'Shia Baby', timezone: 'UTC', taxSetAsideRate: 0.0825 };
+
+      const outsider = estimateTaxSetAside({
+        business,
+        sales: [],
+        actor: member({ householdId: HOUSEHOLD_B }),
+        householdId: HOUSEHOLD_A,
+      });
+      checks.push(
+        check(
+          'financial figures are refused across a household boundary',
+          'business-ledger',
+          outsider.ok === false && (outsider.issues ?? []).some((i) => i.code === 'tenant'),
+          `got ${JSON.stringify(outsider)}`,
+        ),
+      );
+
+      const viewerReads = estimateTaxSetAside({ business, sales: [], actor: member({ id: 'm-viewer', role: 'viewer' }), householdId: HOUSEHOLD_A });
+      checks.push(
+        check(
+          'a read-only guest cannot see the shop finances',
+          'business-ledger',
+          viewerReads.ok === false,
+          `got ${JSON.stringify(viewerReads)}`,
+        ),
+      );
+
+      // PRODUCT_SPEC §8: the label and its disclaimer are a product requirement,
+      // and shipping the number without the caveat is a compliance failure, not
+      // a copy nit — so it is checked here rather than left to a unit test.
+      const legitimate = estimateTaxSetAside({ business, sales: [], actor: member(), householdId: HOUSEHOLD_A });
+      checks.push(
+        check(
+          'the tax figure is labelled a set-aside and carries its disclaimer',
+          'business-ledger',
+          legitimate.ok === true &&
+            legitimate.value?.label === 'Tax Set-Aside' &&
+            typeof legitimate.value?.disclaimer === 'string' &&
+            legitimate.value.disclaimer.length > 0,
+          `got ${JSON.stringify(legitimate)}`,
+        ),
+      );
+    }
+  }
+
+  const searchMod = await tryImport('../../../domains/platform/search.ts');
+  if ('error' in searchMod) {
+    missing.push({ module: 'domains/platform/search.ts', owner: 'platform', reason: searchMod.error });
+  } else {
+    const SearchIndex = searchMod.mod.SearchIndex as { build: (docs: unknown[]) => unknown } | undefined;
+    const search = searchMod.mod.search as
+      | ((index: unknown, query: string, member: Member, householdId: string, options?: Record<string, unknown>) => Array<{ id: string }>)
+      | undefined;
+
+    if (typeof search !== 'function' || SearchIndex === undefined) {
+      checks.push(check('search() exported', 'platform', false, 'search.ts does not export search()/SearchIndex'));
+    } else {
+      const index = SearchIndex.build([
+        { entity: 'event', id: 'ours', householdId: HOUSEHOLD_A, title: 'Dentist appointment' },
+        { entity: 'event', id: 'theirs', householdId: HOUSEHOLD_B, title: 'Dentist appointment' },
+        { entity: 'expense', id: 'money', householdId: HOUSEHOLD_A, title: 'Dentist supplies', businessId: 'biz-ours' },
+      ]);
+
+      const asOwner = search(index, 'dentist', member(), HOUSEHOLD_A);
+      checks.push(
+        check(
+          'search never returns another household row',
+          'platform',
+          asOwner.every((hit) => hit.id !== 'theirs'),
+          `a global search box leaked across tenants: ${JSON.stringify(asOwner)}`,
+        ),
+      );
+
+      const asEmployee = search(index, 'dentist', member({ id: 'm-emp', role: 'employee' }), HOUSEHOLD_A, { businessId: 'biz-ours' });
+      checks.push(
+        check(
+          'search honours the employee privacy boundary',
+          'platform',
+          asEmployee.every((hit) => hit.id !== 'ours'),
+          `an employee found a family appointment through search: ${JSON.stringify(asEmployee)}`,
+        ),
+      );
+
+      const outOfScope = search(index, 'dentist', member(), HOUSEHOLD_A, { businessId: 'biz-rival' });
+      checks.push(
+        check(
+          'a business row stays inside its business scope',
+          'platform',
+          outOfScope.every((hit) => hit.id !== 'money'),
+          `got ${JSON.stringify(outOfScope)}`,
+        ),
+      );
+    }
+  }
+
   return { checks, missing, stats: { hostilePayloads: HOSTILE_PAYLOADS.length } };
 }
