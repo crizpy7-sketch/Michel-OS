@@ -35,6 +35,8 @@ const CALENDAR_DOMAIN_ALIASES: Readonly<Record<string, (typeof ALLOWED_DOMAINS)[
   business: 'work',
 });
 
+const MONDAY_THROUGH_FRIDAY = ['MO', 'TU', 'WE', 'TH', 'FR'] as const;
+
 export interface AssistantProposalContext {
   text: string;
   now: string;
@@ -69,6 +71,7 @@ Rules:
 - The ONLY valid domain values are: ${ALLOWED_DOMAINS.join(', ')}.
 - Personal job/work schedules use domain "work". Never use "business" as a domain. Shia Baby employee/store operations use domain "shia-baby".
 - For a recurring event, use create_recurring_schedule and include a recurrence object.
+- For WEEKLY recurrence, recurrence.byWeekday must list EVERY weekday the user requested, using only SU, MO, TU, WE, TH, FR, SA. "Monday through Friday", "Monday to Friday", and "weekdays" mean ["MO","TU","WE","TH","FR"]. Never collapse a multi-day request to only the weekday containing startsAt.
 - For a reminder, a dueAt is required. If the user did not provide enough timing detail, choose classify_inbox_item.
 - For shopping, use add_shopping_item. For a physical trip/task, use create_errand.
 - For adjust_inventory, productId must come from context.business.products and delta must be a non-zero whole quantity. Never invent a product id.
@@ -167,7 +170,7 @@ export async function proposeWithOpenAI(context: AssistantProposalContext): Prom
         ...(typeof rationale === 'string' && rationale.trim().length > 0
           ? { rationale: rationale.trim().slice(0, 500) }
           : {}),
-      }),
+      }, context.text),
     };
   } finally {
     clearTimeout(timer);
@@ -177,25 +180,57 @@ export async function proposeWithOpenAI(context: AssistantProposalContext): Prom
 /**
  * Normalize only narrow, deterministic provider synonyms before the frozen
  * validator sees the proposal. This is not a permissive repair layer: unknown
- * domains remain untouched so the validator can reject them.
+ * domains remain untouched so the validator can reject them. The only
+ * recurrence repair comes directly from explicit wording in the original user
+ * request, never from a guess about what they probably meant.
  */
-export function normalizeProviderProposal(proposal: AIActionProposal): AIActionProposal {
+export function normalizeProviderProposal(
+  proposal: AIActionProposal,
+  userRequest = '',
+): AIActionProposal {
   if (proposal.type !== 'create_event' && proposal.type !== 'create_recurring_schedule') return proposal;
 
-  const domain = proposal.payload['domain'];
-  if (typeof domain !== 'string') return proposal;
-  if ((ALLOWED_DOMAINS as readonly string[]).includes(domain)) return proposal;
+  let payload = proposal.payload;
+  let changed = false;
 
-  const normalized = CALENDAR_DOMAIN_ALIASES[domain.trim().toLowerCase()];
-  if (normalized === undefined) return proposal;
+  const domain = payload['domain'];
+  if (typeof domain === 'string' && !(ALLOWED_DOMAINS as readonly string[]).includes(domain)) {
+    const normalizedDomain = CALENDAR_DOMAIN_ALIASES[domain.trim().toLowerCase()];
+    if (normalizedDomain !== undefined) {
+      payload = { ...payload, domain: normalizedDomain };
+      changed = true;
+    }
+  }
 
-  return {
-    ...proposal,
-    payload: {
-      ...proposal.payload,
-      domain: normalized,
-    },
-  };
+  if (proposal.type === 'create_recurring_schedule') {
+    const explicitWeekdays = explicitWeeklyDaysFromRequest(userRequest);
+    const recurrence = payload['recurrence'];
+    if (explicitWeekdays !== null && isPlainObject(recurrence)) {
+      payload = {
+        ...payload,
+        recurrence: {
+          ...recurrence,
+          freq: 'WEEKLY',
+          interval: 1,
+          byWeekday: [...explicitWeekdays],
+        },
+      };
+      changed = true;
+    }
+  }
+
+  return changed ? { ...proposal, payload } : proposal;
+}
+
+function explicitWeeklyDaysFromRequest(request: string): readonly string[] | null {
+  const normalized = request.toLowerCase().replace(/[–—]/g, '-');
+  const mondayThroughFriday =
+    /\b(?:every\s+)?(?:monday|mon)\s*(?:through|thru|to|-)\s*(?:friday|fri)\b/.test(normalized);
+  const weekdays =
+    /\b(?:every|each)\s+weekday(?:s)?\b/.test(normalized) ||
+    /\bon\s+weekdays\b/.test(normalized);
+
+  return mondayThroughFriday || weekdays ? MONDAY_THROUGH_FRIDAY : null;
 }
 
 function boundContext(context: AssistantProposalContext): Record<string, unknown> {
