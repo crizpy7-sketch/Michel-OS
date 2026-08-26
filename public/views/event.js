@@ -8,8 +8,12 @@ const DAY = 24 * 3600_000;
 
 export async function render(mount, params, { navigate, setTitle }) {
   const now = Date.now();
-  const from = new Date(now - 365 * DAY).toISOString();
-  const to = new Date(now + 400 * DAY).toISOString();
+  // The occurrences API deliberately rejects windows longer than 400 days.
+  // Keep this broad enough for detail links from the 60-day mini-app views,
+  // while staying inside that server guard so it is not silently replaced by
+  // the default 28-day window.
+  const from = new Date(now - 30 * DAY).toISOString();
+  const to = new Date(now + 365 * DAY).toISOString();
   await withStates(mount, 'list',
     () => api.get(`/api/households/${state.household.id}/occurrences${query({ from, to })}`),
     (data) => {
