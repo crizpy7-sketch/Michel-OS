@@ -25,7 +25,7 @@ export const AGENTS: SwarmAgent[] = [
       'README.md',
       'LICENSE',
       'tests/integration/**',
-      'public/**',
+      'tools/assets/**',
       'art/**',
     ],
     dependsOn: [],
@@ -83,6 +83,18 @@ export const AGENTS: SwarmAgent[] = [
     owns: ['db/**', 'server/db/**', 'tests/db/**'],
     dependsOn: ['orchestrator'],
     phase: 'B-foundations',
+  },
+
+  {
+    id: 'interface',
+    letter: 'L',
+    name: 'Interface Agent',
+    // Owns everything the browser downloads, plus the server-side shell that
+    // delivers it. Separated from B3 because the API's contract and the app's
+    // appearance change for entirely different reasons and at different rates.
+    owns: ['public/**', 'server/ui/**', 'tests/ui/**'],
+    dependsOn: ['orchestrator', 'web'],
+    phase: 'D-interface',
   },
 
   {

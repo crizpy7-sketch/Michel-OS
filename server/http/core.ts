@@ -288,9 +288,29 @@ interface Route {
  */
 export class Router {
   readonly #routes: Route[] = [];
+  #fallback: Handler | null = null;
 
   add(method: Method, path: string, handler: Handler): this {
     this.#routes.push({ method, segments: path.split('/').filter((s) => s.length > 0), handler });
+    return this;
+  }
+
+  /**
+   * A handler for GET requests that match no route at all.
+   *
+   * Deliberately NOT a `'/*'` route. A wildcard route matches on path, so
+   * registering one made `GET /api/auth/login` — a path that exists under POST
+   * — match the wildcard and answer 200 with an HTML page, instead of the 405
+   * that tells the client which method to use. The same wildcard swallowed
+   * every unknown `/api` path into the app shell, handing `fetch()` a document
+   * and a JSON parse error rather than a 404.
+   *
+   * A fallback is a different thing from a route and is treated as one: it is
+   * consulted only after `match` has failed completely, so it can never shadow
+   * a real endpoint or a method-not-allowed answer.
+   */
+  otherwise(handler: Handler): this {
+    this.#fallback = handler;
     return this;
   }
 
@@ -321,7 +341,15 @@ export class Router {
       if (!pathMatches.includes(route.method)) pathMatches.push(route.method);
     }
 
-    return pathMatches.length > 0 ? { methodNotAllowed: true, allowed: pathMatches } : null;
+    if (pathMatches.length > 0) return { methodNotAllowed: true, allowed: pathMatches };
+
+    // Only now, with no route matching this path under any method, may the
+    // fallback answer — and only for the safe methods a browser uses to ask
+    // for a page. A POST to an unknown path is a 404, not an app shell.
+    if (this.#fallback !== null && (method === 'GET' || method === 'HEAD')) {
+      return { handler: this.#fallback, params: {} };
+    }
+    return null;
   }
 }
 

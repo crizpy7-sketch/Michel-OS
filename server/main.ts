@@ -16,12 +16,15 @@
  * tested, and boot is exactly where a mistake is most expensive.
  */
 
+import { createHash } from 'node:crypto';
+import { readFile, readdir } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { buildApiRouter } from './api/routes.ts';
 import type { AppEnv } from './api/context.ts';
 import { createPostgresDb, migrate, verifyMigrations, type Db } from './db/client.ts';
-import { Router, dispatch, problem, securityHeaders, send } from './http/core.ts';
+import { Router, dispatch, html, problem, securityHeaders, send } from './http/core.ts';
 import { cacheControlFor, resolveAsset, sendAsset } from './http/static.ts';
+import { renderManifest, renderShell } from './ui/shell.ts';
 
 /* ---------------------------------------------------------------- config */
 
@@ -138,6 +141,56 @@ export function buildServerRouter(env: AppEnv): Router {
     }
   });
 
+  /**
+   * The PWA manifest, generated from whatever icon derivatives exist right now.
+   *
+   * A route rather than a file in `public/` so the icon URLs cannot go stale:
+   * the derived filenames carry a content hash, so regenerating the artwork
+   * changes them, and a committed manifest would then point at icons that are
+   * no longer there — an install prompt with a broken picture.
+   */
+  router.get('/manifest.webmanifest', async () => {
+    const icons = await installIcons();
+    return {
+      status: 200,
+      headers: {
+        'content-type': 'application/manifest+json; charset=utf-8',
+        'cache-control': 'public, max-age=300, must-revalidate',
+      },
+      body: renderManifest(icons),
+    };
+  });
+
+  /**
+   * The app shell, for every path that is not the API and not a file.
+   *
+   * `otherwise` rather than a `'/*'` route, which is the distinction that
+   * matters: a wildcard route matches on path, so it answered `GET
+   * /api/auth/login` with an HTML page instead of the 405 naming the method
+   * that works, and swallowed every unknown `/api` path into the shell. A
+   * fallback is consulted only after matching has failed completely.
+   *
+   * It exists so a deep link — a bookmarked `/business/inventory`, a shared
+   * `/event/…` — loads the app rather than 404ing. The client router reads the
+   * path and renders the right screen; the server does not need to know them.
+   */
+  router.otherwise(async (req) => {
+    // The router does not know that `/api` means something; this file does.
+    // An unmatched path under it is a missing endpoint, and answering it with
+    // the app shell would hand a `fetch()` a page of markup and a JSON parse
+    // error where it expected a 404.
+    if (req.url.pathname === '/api' || req.url.pathname.startsWith('/api/')) {
+      return problem(404, 'not_found', 'No such endpoint.');
+    }
+
+    return html(200, renderShell({ version: ASSET_VERSION }), {
+      // The shell is identical for everyone, so it can be cached — but it must
+      // be revalidated, or a deploy leaves people on an old client pointing at
+      // a new API. `no-cache` means "check first", not "do not store".
+      headers: { 'cache-control': 'no-cache' },
+    });
+  });
+
   // There is deliberately NO `/api/*` catch-all. One was registered here and it
   // cost more than it bought: a catch-all matches the PATH, so `GET
   // /api/auth/login` matched it and answered 404 instead of the 405 the router
@@ -147,6 +200,57 @@ export function buildServerRouter(env: AppEnv): Router {
   // `/api` can fall through to the app shell regardless.
 
   return router;
+}
+
+/**
+ * A version stamp for the CSS and JS URLs.
+ *
+ * Resolved once at startup from the icon manifest's own content, which changes
+ * whenever the assets do. Not a timestamp: a timestamp changes on every restart
+ * and busts the cache for clients whose files did not change at all.
+ */
+let ASSET_VERSION = 'dev';
+
+interface InstallIcon { src: string; sizes: string }
+let installIconCache: InstallIcon[] | null = null;
+
+/**
+ * The 192px and 512px icons an install prompt uses.
+ *
+ * Read from disk once and cached: a manifest request on every cold start of
+ * every phone in the house should not re-read a directory.
+ */
+async function installIcons(): Promise<InstallIcon[]> {
+  if (installIconCache !== null) return installIconCache;
+
+  const dir = new URL('../public/icons/derived/', import.meta.url).pathname;
+  try {
+    const names = await readdir(dir);
+    const found: InstallIcon[] = [];
+    for (const size of [192, 512]) {
+      // `appointments` is the app's own identity in the installer, so it is
+      // named rather than "whichever file sorted first".
+      const match = names.find((n) => n.startsWith(`appointments-${size}-`) && n.endsWith('.png'));
+      if (match !== undefined) found.push({ src: `/icons/derived/${match}`, sizes: `${size}x${size}` });
+    }
+    installIconCache = found;
+  } catch {
+    // No derived icons yet (the script has not been run). The app still works;
+    // it just cannot be installed to a home screen until it has.
+    installIconCache = [];
+  }
+  return installIconCache;
+}
+
+/** Stamp the asset URLs from the icon manifest's content, if it is there. */
+async function resolveAssetVersion(): Promise<void> {
+  const path = new URL('../public/icons/derived/manifest.json', import.meta.url).pathname;
+  try {
+    const bytes = await readFile(path);
+    ASSET_VERSION = createHash('sha256').update(bytes).digest('hex').slice(0, 12);
+  } catch {
+    ASSET_VERSION = 'dev';
+  }
 }
 
 /* ---------------------------------------------------------------- server */
@@ -230,6 +334,8 @@ export async function boot(source: NodeJS.ProcessEnv = process.env): Promise<{ s
       );
     }
   }
+
+  await resolveAssetVersion();
 
   const server = createHttpServer({ config, db });
   return { server, db, config };

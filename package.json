@@ -10,11 +10,14 @@
     "swarm": "node --experimental-strip-types tools/swarm/run.ts",
     "gauntlet": "node --experimental-strip-types tools/swarm/gauntlet.ts",
     "migrate": "node --experimental-strip-types server/db/migrate-cli.ts",
-    "start": "node --experimental-strip-types server/main.ts"
+    "start": "node --experimental-strip-types server/main.ts",
+    "icons": "node --experimental-strip-types tools/assets/icons.ts",
+    "icons:check": "node --experimental-strip-types tools/assets/icons.ts --check"
   },
   "devDependencies": {
     "@types/node": "^26.3.0",
     "@types/pg": "^8.23.1",
+    "sharp": "^0.34.5",
     "typescript": "^5.7.2"
   },
   "dependencies": {

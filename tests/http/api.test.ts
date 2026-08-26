@@ -592,6 +592,34 @@ test('a known path under the wrong method answers 405 and says what is allowed',
   assert.equal(response.headers.get('allow'), 'POST');
 });
 
+test('the app shell answers a deep link but never shadows the API', async (t) => {
+  const h = await startHarness({ now: NOW });
+  t.after(() => h.close());
+
+  // A bookmarked or shared client-side route must load the app, not 404.
+  const deep = await fetch(`${h.base}/business/inventory`);
+  assert.equal(deep.status, 200);
+  assert.match(deep.headers.get('content-type') ?? '', /text\/html/);
+  assert.match(await deep.text(), /app\.js/);
+
+  // But the same fallback must not swallow an unknown API path, or a fetch()
+  // gets a page of markup and a JSON parse error instead of a 404. This has
+  // regressed twice — once from an `/api/*` catch-all, once from a `/*` shell
+  // route — which is why both halves are pinned here.
+  const unknown = await fetch(`${h.base}/api/nope`);
+  assert.equal(unknown.status, 404);
+  assert.equal(unknown.headers.get('content-type'), 'application/json; charset=utf-8');
+});
+
+test('a POST to an unknown path is a 404, not the app shell', async (t) => {
+  const h = await startHarness({ now: NOW });
+  t.after(() => h.close());
+
+  // The fallback is for browsers asking for a page. A POST is not that.
+  const response = await call(h, '/not/a/thing', { method: 'POST', body: {} });
+  assert.equal(response.status, 404);
+});
+
 test('every response carries the security headers', async (t) => {
   const h = await startHarness({ now: NOW });
   t.after(() => h.close());

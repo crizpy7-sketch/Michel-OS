@@ -329,6 +329,35 @@ export function buildApiRouter(env: AppEnv): Router {
 
   /* ---------------------------------------------------------- household */
 
+  /**
+   * Start a second household, or a first one for somebody who arrived by
+   * invitation and then lost it.
+   *
+   * `guardUser`, not `guard`: there is no household to be a member of yet, so
+   * the only check available is that this is a real signed-in person. The
+   * creator becomes its owner in the same transaction, which is what stops a
+   * household from ever existing with nobody able to administer it.
+   */
+  r.post('/api/households', guardUser(env, async ({ req, env: e, session }) => {
+    const name = str(req.body, 'name', 120);
+    if (name === null) return problem(422, 'invalid', 'A household needs a name.');
+
+    const timezone = optionalStr(req.body, 'timezone', 64) ?? 'UTC';
+    if (!isKnownTimezone(timezone)) {
+      return problem(422, 'invalid', 'That is not a timezone this server knows.');
+    }
+
+    const result = await e.db.transaction(async (tx) => {
+      const household = await repo.createHousehold(tx, { name, timezone });
+      const member = await repo.createMember(tx, {
+        householdId: household.id, displayName: session.user.displayName,
+        role: 'owner', userId: session.user.id,
+      });
+      return { household, member };
+    });
+    return created(result);
+  }));
+
   r.get('/api/households/:householdId', guard(env, {}, async (ctx) =>
     ok({
       household: ctx.actor.household,
@@ -1218,4 +1247,20 @@ function fromRule(raw: Record<string, unknown>): RecurrenceRule | 'invalid' {
     ...(count !== undefined ? { count } : {}),
     ...(isWeekday(normalisedWeekStart) ? { weekStart: normalisedWeekStart } : {}),
   };
+}
+
+/**
+ * Is this a timezone this machine's ICU data actually knows?
+ *
+ * Checked because an unknown zone is stored once and then breaks every render
+ * of every date in that household — far from where the typo was made. `Intl`
+ * throws on an invalid identifier, which is the cheapest reliable test there is.
+ */
+function isKnownTimezone(timezone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone });
+    return true;
+  } catch {
+    return false;
+  }
 }
