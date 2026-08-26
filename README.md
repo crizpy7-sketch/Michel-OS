@@ -106,6 +106,24 @@ Phase F  route each finding to the agent that OWNS the file
 slow rubber stamp, so the loop reports unresolved blockers rather than
 lowering the bar to reach green.
 
+### In CI
+
+`.github/workflows/gauntlet.yml` runs `npm run gauntlet` on every push and pull
+request. It deliberately does **not** reimplement the checks: the gauntlet is
+already the gate, `typecheck` and `unit-tests` are two of its nine challengers,
+and a CI that checks something different from what the repo checks is a second
+source of truth waiting to disagree.
+
+The run publishes the scoreboard to the checks page, so a reviewer can see which
+challenger objected and which agent owns each finding without opening the log,
+and uploads `.swarm/` as an artifact.
+
+One thing worth not "fixing" later: `performance` findings are **warnings**, not
+blockers. Its budgets are wall-clock, and a shared runner is not this machine —
+a build that goes red because someone else's job was noisy teaches people to
+ignore red. The growth-curve check (`growthRatio4x`) is the part that catches a
+quadratic scan, and it is a ratio, so it holds on any machine.
+
 ---
 
 ## The swarm

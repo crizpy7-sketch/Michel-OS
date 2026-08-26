@@ -16,6 +16,7 @@ export const AGENTS: SwarmAgent[] = [
     owns: [
       'lib/contracts/**',
       'tools/swarm/**',
+      '.github/**',
       'docs/**',
       'package.json',
       'package-lock.json',

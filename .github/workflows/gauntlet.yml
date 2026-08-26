@@ -1,0 +1,65 @@
+# Phase E, on every push.
+#
+# The gauntlet already IS the quality gate: nine challengers that run real
+# code, exiting 0 only on PASSED. So this workflow does not reimplement
+# checks — it runs the same command a contributor runs locally, which is the
+# point. A CI that checks something different from what the repo checks is a
+# second source of truth waiting to disagree.
+#
+# `npm run gauntlet` subsumes `npm run typecheck` and `npm test`: both are
+# challengers, and a failure in either is routed to the agent that owns the
+# file rather than reported as a bare non-zero exit.
+name: gauntlet
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# A newer push supersedes an in-flight run on the same ref. `main` is exempt:
+# cancelling a run on the default branch would lose the record of whether that
+# commit was ever green.
+concurrency:
+  group: gauntlet-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  gauntlet:
+    name: Phase E — adversarial review
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 strips the TypeScript types natively; there is no bundler and
+      # no transpile step, so this is the whole toolchain.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Run the gauntlet
+        run: npm run gauntlet
+
+      # Always: a failing run is exactly when the scoreboard is worth reading,
+      # and the report is written on every verdict.
+      - name: Scoreboard
+        if: always()
+        run: node .github/scripts/gauntlet-summary.mjs >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload gauntlet report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gauntlet-report
+          path: .swarm/
+          if-no-files-found: warn
+          retention-days: 14

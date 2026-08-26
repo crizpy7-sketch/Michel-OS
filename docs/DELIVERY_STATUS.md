@@ -95,6 +95,10 @@ npm run gauntlet   # nine challengers, 46 runtime probe checks
 npm test           # 381 unit + integration tests
 ```
 
+The same gauntlet runs in CI on every push
+(`.github/workflows/gauntlet.yml`), so none of the numbers above depend on
+somebody having remembered to run it locally.
+
 ## The next phases, in dependency order
 
 1. **Persistence (Agent B-backend).** Supabase migrations for the frozen v1.1
