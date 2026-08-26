@@ -4,14 +4,14 @@ import {
   created, guard, instantField, int, ok, optionalStr, requireBusiness, str, type AppEnv,
 } from './context.ts';
 import type { Weekday } from '../../lib/contracts/index.ts';
+import { registerAssistantRoutes } from './assistant-actions.ts';
 
 const WEEKDAYS: readonly Weekday[] = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 
 /**
- * The staffing domain already consumes availability and time-off rows when it
- * assigns and publishes shifts. These routes expose that existing persistence
- * seam to the family UI; they deliberately do not duplicate any scheduling
- * rule at the edge.
+ * API extensions that sit beside the large core route module. Staffing
+ * availability landed first; the guarded Assistant now registers through the
+ * same extension hook so main.ts keeps one stable composition point.
  */
 export function registerBusinessAvailabilityRoutes(router: Router, env: AppEnv): void {
   router.get('/api/households/:householdId/business/availability',
@@ -89,4 +89,6 @@ export function registerBusinessAvailabilityRoutes(router: Router, env: AppEnv):
       });
       return saved === null ? problem(404, 'not_found', 'No such business.') : created(saved);
     }));
+
+  registerAssistantRoutes(router, env);
 }
