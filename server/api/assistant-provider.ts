@@ -12,14 +12,7 @@ export const ASSISTANT_ACTION_TYPES = [
   'add_shopping_item',
   'create_errand',
   'classify_inbox_item',
-  'create_employee',
-  'assign_shift',
-  'record_availability',
-  'request_time_off',
-  'create_inventory_item',
   'adjust_inventory',
-  'receive_inventory',
-  'update_reorder_point',
   'record_expense',
 ] as const satisfies readonly AIActionType[];
 
@@ -52,20 +45,15 @@ You PROPOSE exactly one structured action. You never execute anything and you ne
 
 Rules:
 - Use only ids that appear in the supplied authorized context.
-- Resolve relative dates/times from context.now in context.timezone (or the business timezone for shifts).
+- Resolve relative dates/times from context.now in context.timezone.
 - For an event, include title, domain, startsAt, endsAt and timezone. Default duration to 60 minutes only when the user gave a start time but no duration/end.
 - For a recurring event, use create_recurring_schedule and include a recurrence object.
 - For a reminder, a dueAt is required. If the user did not provide enough timing detail, choose classify_inbox_item.
 - For shopping, use add_shopping_item. For a physical trip/task, use create_errand.
-- For assign_shift, use an existing shiftId when the user clearly refers to one. Otherwise include employeeId + startsAt + endsAt so Michel OS can create and assign the shift.
-- For record_availability use employeeId, weekday (SU/MO/TU/WE/TH/FR/SA), startMinute, endMinute, available, and optional preferredWeeklyHours.
-- For request_time_off use employeeId, startsAt, endsAt and optional reason.
-- For create_inventory_item use sku, name, optional quantityOnHand, reorderPoint, unitCostCents, unitPriceCents.
-- For adjust_inventory or receive_inventory, productId must come from context.products and delta must be a non-zero whole quantity.
-- For update_reorder_point use productId and reorderPoint.
+- For adjust_inventory, productId must come from context.business.products and delta must be a non-zero whole quantity. Never invent a product id.
 - For record_expense include amount in dollars, vendor, category and description. Never guess a dollar amount.
-- If required information is missing or the request is outside the supported actions, choose classify_inbox_item and put the original request in payload.notes.
-- Do not include householdId, businessId, roles, permissions, user ids, auth data, or any server-assigned fields in payload. The server injects trusted scope.
+- If the request asks for another business mutation, a destructive edit, an unsupported action, or lacks required information, choose classify_inbox_item and put the original request in payload.notes. Include payload.domain when a category is clear.
+- Do not include householdId, businessId, roles, permissions, user ids, auth data, or other server-assigned authority fields in payload. The server injects trusted scope.
 - payload_json must be a JSON object encoded as a string, with only fields needed by the selected action.
 - Confidence is 0..1 and reflects how completely the user's words determine the action.`;
 
@@ -83,8 +71,8 @@ const OUTPUT_SCHEMA = {
 
 /**
  * Returns null when no OpenAI key is configured, so the route can fall back to
- * the deterministic local classifier. Provider failures throw and are also
- * caught at that boundary; an AI outage must not take the family organizer down.
+ * the deterministic local classifier. Provider failures throw and are caught at
+ * that boundary; an AI outage must not take the family organizer down.
  */
 export async function proposeWithOpenAI(context: AssistantProposalContext): Promise<ModelProposalResult | null> {
   const apiKey = (process.env['OPENAI_API_KEY'] ?? '').trim();
