@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import { registerAssistantRoutes } from '../../server/api/assistant-actions.ts';
+import { ASSISTANT_ACTION_TYPES, proposeWithOpenAI } from '../../server/api/assistant-provider.ts';
+import { insertAiAction, lockAiAction, markAiActionExecuted } from '../../server/db/ai-actions.ts';
 import { call, joinHousehold, registerOwner, startHarness, type Agent, type Harness } from './harness.ts';
 
 let h: Harness;
@@ -17,6 +20,25 @@ after(async () => {
   if (originalKey === undefined) delete process.env['OPENAI_API_KEY'];
   else process.env['OPENAI_API_KEY'] = originalKey;
   await h.close();
+});
+
+test('Assistant source modules expose the guarded V1 seams used by the HTTP flow', async () => {
+  assert.equal(typeof registerAssistantRoutes, 'function');
+  assert.equal(typeof insertAiAction, 'function');
+  assert.equal(typeof lockAiAction, 'function');
+  assert.equal(typeof markAiActionExecuted, 'function');
+  assert.equal(typeof proposeWithOpenAI, 'function');
+  assert.deepEqual(ASSISTANT_ACTION_TYPES, [
+    'create_event', 'create_recurring_schedule', 'create_reminder', 'add_shopping_item',
+    'create_errand', 'classify_inbox_item', 'adjust_inventory', 'record_expense',
+  ]);
+
+  // Provider configuration is optional by design. With no key the provider
+  // must not make a network request; it returns null and the local parser owns
+  // the fallback path exercised below.
+  assert.equal(await proposeWithOpenAI({
+    text: 'add milk', now: h.now(), timezone: 'America/Chicago', members: [],
+  }), null);
 });
 
 test('Assistant falls back locally, confirms, executes once, and cannot replay', async () => {
