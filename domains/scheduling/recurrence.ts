@@ -63,9 +63,11 @@ import type {
   Frequency,
   Instant,
   Occurrence,
+  ExpansionResult,
   RecurrenceRule,
   TimeZone,
   UUID,
+  Weekday,
 } from '../../lib/contracts/index.ts';
 
 /* ------------------------------------------------------------------ limits */
@@ -267,12 +269,24 @@ function toInstant(ms: number): Instant {
 interface NormalizedRule {
   freq: Frequency;
   interval: number;
-  /** WEEKLY only: Monday-based offsets 0..6, ascending and deduped. */
+  /**
+   * WEEKLY only: offsets 0..6 from the rule's week start, ascending and deduped.
+   * With the default WKST=MO these are the familiar MO=0 … SU=6.
+   */
   weekdayOffsets: number[] | null;
+  /** CR-006: index into WEEKDAYS of the day the week starts on. Defaults to MO. */
+  weekStartIndex: number;
   /** MONTHLY only: 1..31, ascending and deduped. */
   monthDays: number[] | null;
   until: LocalDate | null;
   count: number | null;
+}
+
+/** CR-005: a blank or non-string location is no location at all. */
+function cleanLocation(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function isPositiveInt(value: unknown): value is number {
@@ -303,14 +317,20 @@ function normalizeRule(rule: RecurrenceRule | undefined): NormalizedRule | null 
   if (freq !== 'DAILY' && freq !== 'WEEKLY' && freq !== 'MONTHLY') return null;
   if (!isPositiveInt(rule.interval)) return null;
 
+  // CR-006. An unknown or absent `weekStart` falls back to the RFC 5545
+  // default, Monday — the same anchor v1.0 hardcoded, so existing series do
+  // not shift underneath a household that never set the field.
+  const declaredWeekStart = WEEKDAYS.indexOf(rule.weekStart as Weekday);
+  const weekStartIndex = declaredWeekStart < 0 ? WEEKDAYS.indexOf('MO') : declaredWeekStart;
+
   let weekdayOffsets: number[] | null = null;
   if (freq === 'WEEKLY' && Array.isArray(rule.byWeekday)) {
     const offsets: number[] = [];
     for (const code of rule.byWeekday) {
       const index = WEEKDAYS.indexOf(code);
       if (index < 0) continue; // unknown code — drop it
-      const mondayBased = (index + 6) % 7; // MO=0 .. SU=6 (WKST=MO, see below)
-      if (!offsets.includes(mondayBased)) offsets.push(mondayBased);
+      const fromWeekStart = (index - weekStartIndex + 7) % 7;
+      if (!offsets.includes(fromWeekStart)) offsets.push(fromWeekStart);
     }
     if (offsets.length > 0) {
       offsets.sort((a, b) => a - b);
@@ -334,6 +354,7 @@ function normalizeRule(rule: RecurrenceRule | undefined): NormalizedRule | null 
   return {
     freq,
     interval: rule.interval,
+    weekStartIndex,
     weekdayOffsets,
     monthDays,
     until: parseCalendarDate(rule.until),
@@ -357,9 +378,10 @@ function buildExceptionSet(rule: RecurrenceRule | undefined): Set<string> {
  *
  * DAILY   period k -> start + k*interval days.
  * WEEKLY  period k -> the selected weekdays of the k*interval-th week after the
- *         week containing the series start. Weeks start on MONDAY (RFC 5545
- *         WKST default) — that anchor is what makes "every 2 weeks on Mon+Fri"
- *         stable rather than drifting with the start weekday.
+ *         week containing the series start. The week starts on the rule's
+ *         `weekStart` (CR-006), defaulting to MONDAY per RFC 5545 — that anchor
+ *         is what makes "every 2 weeks on Mon+Fri" stable rather than drifting
+ *         with the start weekday.
  * MONTHLY period k -> the selected month days of the k*interval-th month.
  *         Days that do not exist in that month are omitted (skip, never clamp).
  */
@@ -369,10 +391,11 @@ function periodDates(rule: NormalizedRule, start: LocalDate, period: number): Lo
   }
 
   if (rule.freq === 'WEEKLY') {
-    const offsets = rule.weekdayOffsets ?? [(dayOfWeek(start) + 6) % 7];
-    const anchorMonday = addDays(start, -((dayOfWeek(start) + 6) % 7));
-    const weekStartShift = period * rule.interval * 7;
-    return offsets.map((offset) => addDays(anchorMonday, weekStartShift + offset));
+    const fromWeekStart = (dayOfWeek(start) - rule.weekStartIndex + 7) % 7;
+    const offsets = rule.weekdayOffsets ?? [fromWeekStart];
+    const anchor = addDays(start, -fromWeekStart);
+    const weekShift = period * rule.interval * 7;
+    return offsets.map((offset) => addDays(anchor, weekShift + offset));
   }
 
   // MONTHLY
@@ -452,11 +475,11 @@ function compareStaged(a: StagedOccurrence, b: StagedOccurrence): number {
  *   - `until` is inclusive by local date: an occurrence on the `until` day is
  *     kept, the next one is not.
  */
-export function expandOccurrences(
+export function expandOccurrencesDetailed(
   event: EventRecord,
   window: { from: string; to: string },
   options?: { participantIds?: string[]; overrides?: EventRecord[]; maxOccurrences?: number },
-): Occurrence[] {
+): ExpansionResult {
   /* -- programmer errors: throw ------------------------------------------ */
   if (event === null || typeof event !== 'object') {
     throw new Error('expandOccurrences: `event` is required.');
@@ -486,9 +509,10 @@ export function expandOccurrences(
   const maxOccurrences = requestedMax ?? DEFAULT_MAX_OCCURRENCES;
 
   /* -- bad data: degrade quietly ----------------------------------------- */
-  if (event.status === 'cancelled') return [];
+  const empty: ExpansionResult = { occurrences: [], truncated: false, maxOccurrences };
+  if (event.status === 'cancelled') return empty;
   const seriesStart = parseInstant(event.startsAt);
-  if (seriesStart === null) return []; // unusable row
+  if (seriesStart === null) return empty; // unusable row
   const seriesEnd = parseInstant(event.endsAt);
   // A missing or inverted end yields a zero-length occurrence rather than a throw.
   const durationMs = seriesEnd === null || seriesEnd < seriesStart ? 0 : seriesEnd - seriesStart;
@@ -522,10 +546,13 @@ export function expandOccurrences(
       ? windowTo
       : Math.max(windowTo, latestOverrideAnchor + 1);
 
+  const baseLocation = cleanLocation(event.location);
   const exceptions = buildExceptionSet(event.recurrence);
   const rule = normalizeRule(event.recurrence);
   const isSeries = rule !== null;
   const staged: StagedOccurrence[] = [];
+  /** Set when the hard step guard, not the rule, ended the expansion. */
+  let stepLimited = false;
 
   const materialise = (rawStartMs: number, localDate: LocalDate): 'kept' | 'skipped' => {
     if (exceptions.has(formatCalendarDate(localDate))) return 'skipped';
@@ -541,6 +568,7 @@ export function expandOccurrences(
           ? overrideStart + durationMs
           : overrideEndRaw;
       if (!intersectsWindow(overrideStart, overrideEnd, windowFrom, windowTo)) return 'skipped';
+      const overrideLocation = cleanLocation(override.location) ?? baseLocation;
       staged.push({
         startMs: overrideStart,
         endMs: overrideEnd,
@@ -554,6 +582,9 @@ export function expandOccurrences(
           status: override.status,
           participantIds: [...participantIds],
           isOverride: true,
+          // CR-005. Omitted rather than set to undefined when absent, so two
+          // expansions of the same series stay deep-strict-equal.
+          ...(overrideLocation === undefined ? {} : { location: overrideLocation }),
         },
       });
       return 'kept';
@@ -574,6 +605,7 @@ export function expandOccurrences(
         status: event.status,
         participantIds: [...participantIds],
         isOverride: false,
+        ...(baseLocation === undefined ? {} : { location: baseLocation }),
       },
     });
     return 'kept';
@@ -593,14 +625,21 @@ export function expandOccurrences(
     let steps = 0;
     let generated = 0;
 
-    expansion: while (steps < MAX_EXPANSION_STEPS) {
+    expansion: while (true) {
+      if (steps >= MAX_EXPANSION_STEPS) {
+        stepLimited = true;
+        break expansion;
+      }
       const candidates = periodDates(rule, startDate, period);
       period += 1;
       steps += 1; // an empty period (e.g. Feb for byMonthDay 31) still costs a step
 
       for (const candidate of candidates) {
         steps += 1;
-        if (steps >= MAX_EXPANSION_STEPS) break expansion;
+        if (steps >= MAX_EXPANSION_STEPS) {
+          stepLimited = true;
+          break expansion;
+        }
 
         // Dates earlier in the anchor week/month are not part of the series.
         if (compareLocalDate(candidate, startDate) < 0) continue;
@@ -631,15 +670,39 @@ export function expandOccurrences(
         materialise(rawStartMs, candidate);
 
         // Guardrail: once the cap is filled and every override anchor is behind
-        // us, later occurrences could only be truncated away anyway.
-        if (staged.length >= maxOccurrences && rawStartMs > latestOverrideAnchor) break expansion;
+        // us, later occurrences could only be truncated away anyway. We stage
+        // exactly ONE past the cap on purpose (CR-007) — that surplus row is
+        // what distinguishes a series that ended from one that was cut off.
+        if (staged.length > maxOccurrences && rawStartMs > latestOverrideAnchor) break expansion;
       }
     }
   }
 
   staged.sort(compareStaged);
-  const capped = staged.length > maxOccurrences ? staged.slice(0, maxOccurrences) : staged;
-  return capped.map((entry) => entry.occurrence);
+  const overflowed = staged.length > maxOccurrences;
+  const capped = overflowed ? staged.slice(0, maxOccurrences) : staged;
+  return {
+    occurrences: capped.map((entry) => entry.occurrence),
+    // Either bound counts as truncation: the caller's cap, or the hard step
+    // guard that stops a pathological rule from spinning.
+    truncated: overflowed || stepLimited,
+    maxOccurrences,
+  };
+}
+
+/**
+ * Expand a series into the occurrences that intersect a window.
+ *
+ * The list-only form. Use `expandOccurrencesDetailed` when the caller needs to
+ * know whether the cap cut the list short — a UI cannot offer a "more
+ * occurrences exist" affordance from a bare array (CR-007).
+ */
+export function expandOccurrences(
+  event: EventRecord,
+  window: { from: string; to: string },
+  options?: { participantIds?: string[]; overrides?: EventRecord[]; maxOccurrences?: number },
+): Occurrence[] {
+  return expandOccurrencesDetailed(event, window, options).occurrences;
 }
 
 /**

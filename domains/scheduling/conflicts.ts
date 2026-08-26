@@ -27,6 +27,7 @@ import { createHash } from 'node:crypto';
 import type {
   Conflict,
   ConflictKind,
+  ConflictRef,
   Instant,
   Occurrence,
   ParticipantRole,
@@ -77,23 +78,20 @@ export interface DetectConflictsInput {
 
 /* --------------------------------------------------------- internal shapes */
 
-interface OccurrenceRef {
-  eventId: UUID;
-  occurrenceStart: Instant;
-}
-
 interface Node {
   start: number;
   end: number;
   /** stable tie-break key; never depends on array position */
   sortKey: string;
-  ref: OccurrenceRef;
+  ref: ConflictRef;
   label: string;
 }
 
 interface OccNode extends Node {
   nodeKind: 'occurrence';
   role: ParticipantRole;
+  /** CR-005: `Occurrence.location` landed in contract v1.1. Null when unknown. */
+  location: string | null;
 }
 
 interface ShiftNode extends Node {
@@ -224,9 +222,26 @@ function compareNodes(a: Node, b: Node): number {
   return a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0;
 }
 
-function compareRefs(a: OccurrenceRef, b: OccurrenceRef): number {
-  if (a.occurrenceStart !== b.occurrenceStart) return a.occurrenceStart < b.occurrenceStart ? -1 : 1;
-  return a.eventId < b.eventId ? -1 : a.eventId > b.eventId ? 1 : 0;
+/**
+ * Two locations are "the same place" only if they normalise to the same string.
+ * Deliberately not fuzzy: guessing that "Mercy Clinic" and "Mercy Clinic North"
+ * are one building would suppress a real conflict, and a missed conflict is a
+ * far worse failure here than a redundant one.
+ */
+function sameLocation(a: string, b: string): boolean {
+  const norm = (v: string): string => v.trim().toLowerCase().replace(/\s+/g, ' ');
+  return norm(a) === norm(b);
+}
+
+function refKey(r: ConflictRef): string {
+  return `${r.kind}:${r.id}@${r.startsAt}`;
+}
+
+function compareRefs(a: ConflictRef, b: ConflictRef): number {
+  if (a.startsAt !== b.startsAt) return a.startsAt < b.startsAt ? -1 : 1;
+  const ka = refKey(a);
+  const kb = refKey(b);
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
 }
 
 function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
@@ -267,7 +282,7 @@ interface DraftConflict {
   kind: ConflictKind;
   severity: Severity;
   memberIds: UUID[];
-  refs: OccurrenceRef[];
+  refs: ConflictRef[];
   startMs: number;
   endMs: number;
   explanation: string;
@@ -276,19 +291,18 @@ interface DraftConflict {
 function buildConflict(householdId: UUID, draft: DraftConflict): Conflict {
   const memberIds = [...new Set(draft.memberIds)].sort();
   const refs = [...draft.refs]
-    .filter((ref, index, all) =>
-      all.findIndex((o) => o.eventId === ref.eventId && o.occurrenceStart === ref.occurrenceStart) === index)
+    .filter((ref, index, all) => all.findIndex((o) => refKey(o) === refKey(ref)) === index)
     .sort(compareRefs);
   const startsAt = new Date(draft.startMs).toISOString();
   const endsAt = new Date(draft.endMs).toISOString();
 
   // Canonical, order-independent id payload. Key order is fixed by this literal.
   const payload = JSON.stringify({
-    v: 1,
+    v: 2, // v2: refs carry their table tag (contract v1.1, CR-004)
     household: householdId,
     kind: draft.kind,
     members: memberIds,
-    refs: refs.map((r) => `${r.eventId}@${r.occurrenceStart}`),
+    refs: refs.map(refKey),
     window: [startsAt, endsAt],
   });
   const id = createHash('sha256').update(payload).digest('hex').slice(0, 32);
@@ -366,7 +380,10 @@ export function detectConflicts(input: {
     const end = parseInstant(occ.occurrenceEnd);
     if (start === null || end === null) continue;
 
-    const ref: OccurrenceRef = { eventId: occ.eventId, occurrenceStart: occ.occurrenceStart };
+    const ref: ConflictRef = { kind: 'event', id: occ.eventId, startsAt: occ.occurrenceStart };
+    const location = typeof occ.location === 'string' && occ.location.trim().length > 0
+      ? occ.location.trim()
+      : null;
     const title = occ.title && occ.title.trim().length > 0 ? occ.title.trim() : 'an untitled event';
 
     // Effective roster: explicit participant rows, plus any bare participantIds
@@ -391,6 +408,7 @@ export function detectConflicts(input: {
           ref,
           label: title,
           role,
+          location,
         });
       }
     }
@@ -419,7 +437,7 @@ export function detectConflicts(input: {
 
     sweepIntersections(list, (a, b) => {
       // Defensive: the same occurrence handed in twice is not a conflict with itself.
-      if (a.ref.eventId === b.ref.eventId && a.ref.occurrenceStart === b.ref.occurrenceStart) return;
+      if (refKey(a.ref) === refKey(b.ref)) return;
       const startMs = Math.max(a.start, b.start);
       const endMs = Math.min(a.end, b.end);
       const bothResponsible = a.role === 'responsible' && b.role === 'responsible';
@@ -462,19 +480,30 @@ export function detectConflicts(input: {
         if (b.start < a.end) continue; // overlapping — already reported by the sweep
         const gap = b.start - a.end;
         if (gap < gapMs) {
+          // CR-005 (contract v1.1): `Occurrence.location` now exists, so this is
+          // no longer a pure time-tightness heuristic.
+          //   - same place, nothing to travel: not a conflict at all;
+          //   - two named, different places: a real hop -> `warning`;
+          //   - at least one place unknown: back to the v1.0 heuristic -> `info`.
+          const known = a.location !== null && b.location !== null;
+          const samePlace = known && sameLocation(a.location!, b.location!);
+          if (samePlace) break;
           const sameDay = stampOf(a.end, timezone).day === stampOf(b.start, timezone).day;
+          const route = known ? ` (${a.location!} to ${b.location!})` : '';
           drafts.push({
             kind: 'travel',
-            severity: 'info',
+            severity: known ? 'warning' : 'info',
             memberIds: [memberId],
             refs: [a.ref, b.ref],
             startMs: a.end,
             endMs: b.start,
             explanation:
-              `${who} has ${gapPhrase(gap)} between ${a.label} and ${b.label}: ` +
+              `${who} has ${gapPhrase(gap)} between ${a.label} and ${b.label}${route}: ` +
               `${a.label} ends at ${atPhrase(a.end, timezone, !sameDay)} and ` +
               `${b.label} starts at ${atPhrase(b.start, timezone, true)}. ` +
-              `That may not be enough time to get from one to the other.`,
+              (known
+                ? `That is not enough time to get from one to the other.`
+                : `That may not be enough time to get from one to the other.`),
           });
         }
         break; // only the immediate next commitment counts as a travel hop
@@ -499,7 +528,7 @@ export function detectConflicts(input: {
       start,
       end,
       sortKey: `${shift.startsAt}|${shift.id}`,
-      ref: { eventId: shift.id, occurrenceStart: shift.startsAt },
+      ref: { kind: 'shift', id: shift.id, startsAt: shift.startsAt },
       label: shift.role && shift.role.trim().length > 0 ? `${shift.role.trim()} shift` : 'work shift',
       status: shift.status,
       shiftRole: shift.role && shift.role.trim().length > 0 ? shift.role.trim() : null,
@@ -516,7 +545,7 @@ export function detectConflicts(input: {
     const memberId = employeeMemberIds[employeeId];
     const who = typeof memberId === 'string' && memberId.length > 0 ? nameOf(memberId) : 'One employee';
     sweepIntersections(published, (a, b) => {
-      if (a.ref.eventId === b.ref.eventId) return; // same shift listed twice
+      if (a.ref.id === b.ref.id) return; // same shift listed twice
       const startMs = Math.max(a.start, b.start);
       const endMs = Math.min(a.end, b.end);
       drafts.push({

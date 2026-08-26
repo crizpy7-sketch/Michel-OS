@@ -663,3 +663,142 @@ test('performance: 4000 occurrences across 8 members stay well under a naive O(n
   assert.ok(elapsedMs < 2000, `sweep took ${elapsedMs.toFixed(1)}ms`);
 });
 
+
+/* ================================================================== v1.1 ==
+ * Contract v1.1: CR-004 (refs name their table) and CR-005 (travel knows about
+ * places, not just gaps).
+ * ========================================================================= */
+
+test('CR-004: an event conflict carries only event-tagged refs', () => {
+  const found = run({
+    occurrences: [
+      occ('e1', 'Soccer practice', '2026-08-24T16:00:00.000Z', '2026-08-24T17:00:00.000Z'),
+      occ('e2', 'Dentist', '2026-08-24T16:30:00.000Z', '2026-08-24T17:30:00.000Z'),
+    ],
+    participants: [part('e1', ANA, 'attendee'), part('e2', ANA, 'attendee')],
+    travelGapMinutes: 0,
+  });
+  const c = found[0];
+  assert.ok(c);
+  assert.deepEqual(
+    c.occurrenceRefs.map((r) => r.kind),
+    ['event', 'event'],
+  );
+  assert.deepEqual(
+    c.occurrenceRefs.map((r) => r.id).sort(),
+    ['e1', 'e2'],
+  );
+});
+
+test('CR-004: a work conflict tags the shift ref as a shift, not as an event', () => {
+  const found = run({
+    occurrences: [occ('e1', 'Parent-teacher night', '2026-08-24T17:00:00.000Z', '2026-08-24T19:00:00.000Z')],
+    participants: [part('e1', MOM, 'attendee')],
+    shifts: [shift('s1', 'emp-1', '2026-08-24T16:00:00.000Z', '2026-08-24T22:00:00.000Z', 'published')],
+    employeeMemberIds: { 'emp-1': MOM },
+  });
+  const c = found.find((x) => x.kind === 'work');
+  assert.ok(c);
+
+  const eventRefs = c.occurrenceRefs.filter((r) => r.kind === 'event');
+  const shiftRefs = c.occurrenceRefs.filter((r) => r.kind === 'shift');
+  assert.deepEqual(eventRefs.map((r) => r.id), ['e1']);
+  assert.deepEqual(shiftRefs.map((r) => r.id), ['s1']);
+  // The whole point of CR-004: a consumer resolving ids against the events
+  // table must be able to skip the shift instead of silently missing.
+  assert.equal(shiftRefs[0]!.startsAt, '2026-08-24T16:00:00.000Z');
+});
+
+test('CR-004: an employee conflict is all shift refs', () => {
+  const found = run({
+    occurrences: [],
+    participants: [],
+    shifts: [
+      shift('s1', 'emp-1', '2026-08-24T16:00:00.000Z', '2026-08-24T20:00:00.000Z', 'published'),
+      shift('s2', 'emp-1', '2026-08-24T18:00:00.000Z', '2026-08-24T22:00:00.000Z', 'published'),
+    ],
+    employeeMemberIds: { 'emp-1': DAD },
+  });
+  const c = found.find((x) => x.kind === 'employee');
+  assert.ok(c);
+  assert.ok(c.occurrenceRefs.length >= 2);
+  assert.ok(c.occurrenceRefs.every((r) => r.kind === 'shift'), 'no shift may masquerade as an event');
+});
+
+test('CR-004: an event id and a shift id that collide do not collapse into one ref', () => {
+  // Same string used as both an event id and a shift id. Under v1.0's untagged
+  // `{ eventId, occurrenceStart }` these deduped into a single ref.
+  const shared: UUID = 'x1';
+  const found = run({
+    occurrences: [occ(shared, 'School run', '2026-08-24T16:00:00.000Z', '2026-08-24T18:00:00.000Z')],
+    participants: [part(shared, MOM, 'attendee')],
+    shifts: [shift(shared, 'emp-1', '2026-08-24T16:00:00.000Z', '2026-08-24T20:00:00.000Z', 'published')],
+    employeeMemberIds: { 'emp-1': MOM },
+  });
+  const c = found.find((x) => x.kind === 'work');
+  assert.ok(c);
+  assert.equal(c.occurrenceRefs.length, 2, 'the tag keeps the two rows distinct');
+  assert.deepEqual(c.occurrenceRefs.map((r) => r.kind).sort(), ['event', 'shift']);
+});
+
+test('CR-005: two tight events at the SAME place are not a travel conflict', () => {
+  const at = (id: UUID, title: string, start: string, end: string, location: string): Occurrence => ({
+    ...occ(id, title, start, end),
+    location,
+  });
+  const found = run({
+    occurrences: [
+      at('e1', 'Warm-up', '2026-08-24T16:00:00.000Z', '2026-08-24T17:00:00.000Z', 'Valley Cats Field'),
+      at('e2', 'Game', '2026-08-24T17:05:00.000Z', '2026-08-24T19:00:00.000Z', '  valley cats field  '),
+    ],
+    participants: [part('e1', LEO, 'attendee'), part('e2', LEO, 'attendee')],
+  });
+  assert.deepEqual(kinds(found), [], 'nobody has to travel to the field they are already on');
+});
+
+test('CR-005: two tight events at DIFFERENT named places escalate from info to warning', () => {
+  const at = (id: UUID, title: string, start: string, end: string, location: string): Occurrence => ({
+    ...occ(id, title, start, end),
+    location,
+  });
+  const found = run({
+    occurrences: [
+      at('e1', 'Dentist', '2026-08-24T16:00:00.000Z', '2026-08-24T17:00:00.000Z', 'Mercy Dental'),
+      at('e2', 'Practice', '2026-08-24T17:05:00.000Z', '2026-08-24T19:00:00.000Z', 'Valley Cats Field'),
+    ],
+    participants: [part('e1', LEO, 'attendee'), part('e2', LEO, 'attendee')],
+  });
+  assert.deepEqual(kinds(found), ['travel']);
+  const c = found[0]!;
+  assert.equal(c.severity, 'warning', 'a known route is a real finding, not a hunch');
+  assert.ok(c.explanation.includes('Mercy Dental'), c.explanation);
+  assert.ok(c.explanation.includes('Valley Cats Field'), c.explanation);
+});
+
+test('CR-005: an unknown location falls back to the v1.0 time-only heuristic', () => {
+  const found = run({
+    occurrences: [
+      { ...occ('e1', 'Dentist', '2026-08-24T16:00:00.000Z', '2026-08-24T17:00:00.000Z'), location: 'Mercy Dental' },
+      occ('e2', 'Practice', '2026-08-24T17:05:00.000Z', '2026-08-24T19:00:00.000Z'),
+    ],
+    participants: [part('e1', LEO, 'attendee'), part('e2', LEO, 'attendee')],
+  });
+  assert.deepEqual(kinds(found), ['travel']);
+  assert.equal(found[0]!.severity, 'info', 'one place unknown means we are still guessing');
+  assert.ok(found[0]!.explanation.includes('may not be enough'), found[0]!.explanation);
+});
+
+test('CR-005: similar-but-not-identical place names are NOT treated as the same place', () => {
+  const at = (id: UUID, start: string, end: string, location: string): Occurrence => ({
+    ...occ(id, 'Appointment', start, end),
+    location,
+  });
+  const found = run({
+    occurrences: [
+      at('e1', '2026-08-24T16:00:00.000Z', '2026-08-24T17:00:00.000Z', 'Mercy Clinic'),
+      at('e2', '2026-08-24T17:05:00.000Z', '2026-08-24T18:00:00.000Z', 'Mercy Clinic North'),
+    ],
+    participants: [part('e1', LEO, 'attendee'), part('e2', LEO, 'attendee')],
+  });
+  assert.deepEqual(kinds(found), ['travel'], 'a missed conflict is worse than a redundant one');
+});

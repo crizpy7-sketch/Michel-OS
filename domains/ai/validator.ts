@@ -819,7 +819,7 @@ const ACTION_SCHEMAS = new Map<AIActionType, ActionSchema>([
         scope: oneOf(['occurrence', 'series'], { fallback: 'occurrence' }),
         reason: text(500),
       },
-      all: ['event.delete'],
+      all: ['event.delete.any'],
     },
   ],
   [
@@ -1001,7 +1001,7 @@ const GENERIC_SCHEMA_FIELDS: Record<string, Field> = {
 const ACTION_PERMISSIONS = new Map<AIActionType, { all?: readonly Permission[]; any?: readonly Permission[] }>([
   ['create_event', { all: ['event.create'] }],
   ['update_event', { any: EVENT_WRITE }],
-  ['cancel_event', { all: ['event.delete'] }],
+  ['cancel_event', { all: ['event.delete.any'] }],
   ['create_recurring_schedule', { all: ['event.create'] }],
   ['add_participant', { any: EVENT_WRITE }],
   ['remove_participant', { any: EVENT_WRITE }],

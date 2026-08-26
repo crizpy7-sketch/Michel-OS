@@ -55,9 +55,17 @@ function parseArgs(argv: string[]): Options {
 async function freezeContracts(): Promise<string> {
   const src = await readFile(join(REPO_ROOT, 'lib/contracts/index.ts'), 'utf8');
   const sha256 = createHash('sha256').update(src).digest('hex');
+  // Record the version the hash belongs to. The integrity challenger only reads
+  // `sha256`, but a lock that says which freeze it pins makes a re-freeze
+  // legible in the diff instead of looking like a tampered hash.
+  const version = /CONTRACT_VERSION = '([^']+)'/.exec(src)?.[1] ?? 'unknown';
   await writeFile(
     join(REPO_ROOT, 'tools/swarm/contract.lock'),
-    JSON.stringify({ file: 'lib/contracts/index.ts', sha256, frozenAt: new Date().toISOString() }, null, 2) + '\n',
+    JSON.stringify(
+      { file: 'lib/contracts/index.ts', version, sha256, frozenAt: new Date().toISOString() },
+      null,
+      2,
+    ) + '\n',
   );
   return sha256;
 }

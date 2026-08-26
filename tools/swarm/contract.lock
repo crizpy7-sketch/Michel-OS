@@ -1,5 +1,6 @@
 {
   "file": "lib/contracts/index.ts",
-  "sha256": "19a322fd7ab1769704a6dea37a270384ed3d179a47ec18206c3ff48b5024cb73",
-  "frozenAt": "2026-08-24T22:26:42.579Z"
+  "version": "1.1.0-frozen",
+  "sha256": "4343a384bc59fb6e637c275d7c62537fcf7ce4899aa8e459f706bc5fa020d164",
+  "frozenAt": "2026-08-26T03:38:41.545Z"
 }
