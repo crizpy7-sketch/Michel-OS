@@ -489,7 +489,7 @@ function buildProposal(input: ProposalInput): AIActionProposal {
   if (action === 'add_shopping_item') {
     return {
       type: 'add_shopping_item',
-      payload: { name: title, quantity: 1 },
+      payload: { name: shoppingItemName(text), quantity: 1 },
       confidence,
       rationale: 'Reads as something to buy.',
     };
@@ -510,6 +510,18 @@ function buildProposal(input: ProposalInput): AIActionProposal {
   }
 
   return park();
+}
+
+/**
+ * Extract the actual shopping item from command-shaped language while keeping
+ * arbitrary shopping text untouched. This stays deterministic: it only strips
+ * framing we can prove is command syntax and never paraphrases the item.
+ */
+function shoppingItemName(text: string): string {
+  const title = summarize(text);
+  const match = /^(?:please\s+)?(?:add|put)\s+(.+?)\s+(?:to|on)\s+(?:the\s+)?(?:(?:shopping|grocery)\s+)?list$/i.exec(title);
+  const item = match?.[1]?.trim();
+  return item && item.length > 0 ? item.slice(0, 200) : title;
 }
 
 /**
