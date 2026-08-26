@@ -23,6 +23,10 @@ Edit `.env` and set:
 - `CADDY_DOMAIN` — hostname only, for example `family.example.com`
 - `BASE_URL` — full HTTPS URL, for example `https://family.example.com`
 - `POSTGRES_PASSWORD` — use a long URL-safe random value; `openssl rand -hex 32` is suitable
+- `OPENAI_API_KEY` — optional; enables the OpenAI natural-language proposal provider
+- `OPENAI_MODEL` — optional; defaults to `gpt-5.4-mini`
+
+If `OPENAI_API_KEY` is blank, Michel OS stays fully usable and the Assistant falls back to the deterministic local parser. The key is server-side only and is never sent to the browser. Even with OpenAI enabled, the model only proposes a structured action; Michel OS re-validates tenant scope, permissions and domain rules before execution.
 
 Then:
 
@@ -80,10 +84,12 @@ Run a restore drill on a non-production copy before relying on the backup policy
 2. `https://<domain>/api/ready` returns HTTP 200.
 3. Register/login works over HTTPS and the session survives a reload.
 4. Create an appointment, recurring practice, reminder, shopping item, and errand; reload and confirm persistence.
-5. Add a Shia Baby employee and assign a shift; confirm coverage warnings behave as expected.
-6. Record a product, stock movement, sale, and expense; confirm the tax set-aside still carries its estimate disclaimer.
-7. Test the home screen and mini-app navigation on phone, tablet, and desktop widths.
-8. Run `./backup.sh`, restore that dump into a disposable database, and verify the household exists.
+5. In Assistant, ask to add a shopping item; confirm a low-confidence proposal once, then verify a second execution attempt is rejected rather than duplicated.
+6. If `OPENAI_API_KEY` is configured, ask the Assistant for a dated event and confirm the UI identifies OpenAI as the proposal provider while the action still passes Michel OS validation.
+7. Add a Shia Baby employee and assign a shift; confirm coverage warnings behave as expected.
+8. Record a product, stock movement, sale, and expense; confirm the tax set-aside still carries its estimate disclaimer.
+9. Test the home screen and mini-app navigation on phone, tablet, and desktop widths.
+10. Run `./backup.sh`, restore that dump into a disposable database, and verify the household exists.
 
 ## Useful commands
 
