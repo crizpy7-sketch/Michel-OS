@@ -61,11 +61,27 @@ git fetch --quiet origin "$BRANCH" || fail "git fetch failed"
 CURRENT="$(git rev-parse HEAD)"
 TARGET="$(git rev-parse "origin/${BRANCH}")"
 
-if [ "$CURRENT" = "$TARGET" ] && [ "$FORCE" -eq 0 ]; then
-  exit 0   # nothing to do; stay quiet so the timer does not spam the journal
+# What is RUNNING, which is not the same question as what is checked out.
+#
+# The first version compared HEAD to origin/main and exited when they matched.
+# That silently did the wrong thing after any manual `git pull`: the checkout
+# had already moved, so the timer saw "nothing to do" while the container went
+# on serving the previous build indefinitely. The git SHA says what is on disk;
+# only this stamp says what was actually built and started.
+STAMP="${REPO_ROOT}/.swarm/deployed-sha"
+DEPLOYED="$(cat "$STAMP" 2>/dev/null || echo none)"
+
+if [ "$DEPLOYED" = "$TARGET" ] && [ "$FORCE" -eq 0 ]; then
+  exit 0   # already running this commit; stay quiet so the timer is not noisy
 fi
 
-log "current  ${CURRENT}"
+if [ "$DEPLOYED" = "none" ]; then
+  log "no deployment stamp yet — treating this as a first deploy"
+elif [ "$DEPLOYED" != "$CURRENT" ]; then
+  log "NOTE: checkout is at ${CURRENT} but the running build is ${DEPLOYED}"
+fi
+
+log "deployed ${DEPLOYED}"
 log "target   ${TARGET}"
 
 # ----------------------------------------------------------- CI gate ---
@@ -142,6 +158,7 @@ if ! michel_compose up -d --build; then
   log "build/start FAILED — rolling back to ${CURRENT}"
   cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
   cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
+  mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$CURRENT" > "$STAMP"
   fail "deploy failed and was rolled back to ${CURRENT}"
 fi
 
@@ -164,7 +181,11 @@ if [ "$healthy" -ne 1 ]; then
   michel_compose logs app --tail 40 || true
   cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
   cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
+  mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$CURRENT" > "$STAMP"
   fail "new build was unhealthy; rolled back to ${CURRENT}"
 fi
+
+mkdir -p "$(dirname "$STAMP")"
+printf '%s\n' "$TARGET" > "$STAMP"
 
 log "DEPLOYED ${TARGET} — healthy at ${HEALTH_URL}"
