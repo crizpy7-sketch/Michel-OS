@@ -42,11 +42,18 @@ HEALTH_URL="http://127.0.0.1:${MICHEL_BIND_PORT:-3100}/api/ready"
 
 cd "$REPO_ROOT"
 
-# Never deploy on top of local edits: they would be silently destroyed by the
-# checkout, and their presence means somebody is working on this box by hand.
-if [ -n "$(git status --porcelain)" ]; then
-  fail "working tree is dirty; refusing to deploy over local changes.
-$(git status --short)"
+# Never deploy on top of local edits to TRACKED files: the checkout below would
+# silently destroy them, and their presence means somebody is working on this
+# box by hand.
+#
+# Untracked files are deliberately not a blocker. `git checkout` does not touch
+# them, so they were never at risk — and treating them as one deadlocked this
+# script against its own output: backup.sh creates docs/deploy/backups/, which
+# made the next run refuse to start. A guard that a script trips on its own
+# side effects is worse than no guard.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  fail "tracked files have local modifications; refusing to deploy over them.
+$(git status --short --untracked-files=no)"
 fi
 
 git fetch --quiet origin "$BRANCH" || fail "git fetch failed"
