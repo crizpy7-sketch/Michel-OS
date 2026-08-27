@@ -36,7 +36,25 @@ export function applyAppearance(preference = getAppearancePreference(), now = ne
   const skin = preference === 'auto' ? automaticSkin(now) : preference;
   document.documentElement.dataset.appearance = preference;
   document.documentElement.dataset.skin = skin;
+  syncThemeColor();
   return skin;
+}
+
+/**
+ * Point the browser/PWA chrome at whatever the skin just painted the canvas.
+ *
+ * `theme-color` was a fixed `#f7f1e8` in the document head, so on a phone the
+ * status bar stayed classic ivory in December — a seam right at the top of the
+ * screen, and the most visible part of the skin on an installed app.
+ *
+ * The value is read back off the canvas rather than kept in a second table
+ * here, so a skin can never drift from its own status bar.
+ */
+function syncThemeColor() {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta === null) return;
+  const canvas = getComputedStyle(document.documentElement).getPropertyValue('--midnight').trim();
+  if (canvas.length > 0) meta.setAttribute('content', canvas);
 }
 
 function automaticSkin(now) {

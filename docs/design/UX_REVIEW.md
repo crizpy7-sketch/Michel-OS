@@ -144,8 +144,8 @@ holding two lines of text, with the Morning Brief starting below the fold.
 - The brief and the schedule are now two columns from 62rem up, so both are
   above the fold.
 - The greeting relaxes to 18ch once it has a column to sit in.
-- The launcher is 3×3 on a tablet and one row of nine on a wide desktop, instead
-  of 6+3.
+- The launcher is 5-wide on a tablet (§3 asks for 4–5) and one row of nine on a
+  wide desktop, instead of 6+3 with three orphans.
 - Card text is held to a 62ch measure.
 
 The tablet split-pane for Schedule that §3 also suggests — calendar and details
@@ -162,7 +162,9 @@ defect fix, and it wants its own pass.
   paragraphs. Whether "nobody is responsible for a child at this event" should
   block is an engine question, not a CSS one, so the presentation layer only
   stops it from shouting.
-- **The bear, the artwork, the palette, the seasonal skins, the motion spec.**
+- **The bear, the artwork, the base palette, the motion spec.** The seasonal
+  skins were recalibrated — see the themes section above — but Classic, which is
+  what the approved reference screens show, is byte-identical to before.
 - **Every domain, API, DB, auth and deployment behaviour.**
 
 ---
@@ -183,6 +185,44 @@ Two consequences worth knowing about before the next visual change:
 
 Neither is a live bug. Both would be resolved by folding section 13 into the
 token block rather than layering a third set of overrides on top.
+
+---
+
+## Themes (second pass)
+
+Checked separately, by driving the real selector in More → Appearance through
+all six options and measuring the result rather than eyeballing it.
+
+**The mechanism was already correct.** Every option writes `data-appearance` and
+`data-skin` onto `<html>`, stores the choice, and survives both a client-side
+navigation and a full reload. `auto` resolved correctly (August → Classic, per
+the documented windows). No console errors. Nothing here needed fixing.
+
+**The skins themselves were close to invisible.** They set only three
+translucent corner washes at alpha 0.08–0.14 over an otherwise unchanged canvas.
+Measured against Classic at 390px: a mean per-pixel delta of 1.4–2.6 out of 255,
+with only 15–32% of pixels moving by more than 2 levels. Choosing "Christmas"
+did something the CSS could prove and a person could not see.
+
+Three things were wrong rather than merely weak:
+
+1. **Only one of four skins tinted the accent**, though `HOLIDAY_SKINS.md`
+   listed accent tint as in scope. Halloween had one; the other three did not.
+2. **`theme-color` was a fixed `#f7f1e8` in the document head**, so on a phone
+   the status bar stayed classic ivory in December — a visible seam at the top
+   of the screen, and on an installed PWA the most prominent part of the skin.
+   It now reads back off `--midnight`, so a skin cannot drift from its own
+   chrome.
+3. **The Appearance card promised motion.** "Seasonal skins change atmosphere,
+   accents and motion only" — no skin has ever contained a motion rule. The copy
+   now says what the skins do.
+
+Recalibrated so each skin moves the canvas, the hairline, the washes and the
+accent together. Mean delta is now 5.4–8.5 with 65–75% of pixels visibly
+changed — three to four times more present, still restrained, and every skin's
+primary-button contrast is at or above Classic's own baseline. Card surfaces and
+body text are identical across all five, so legibility does not move with the
+season. Numbers and method in `HOLIDAY_SKINS.md`.
 
 ---
 
