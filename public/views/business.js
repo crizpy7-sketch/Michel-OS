@@ -5,6 +5,7 @@ import { card, chip, denied, empty, field, input, select, toast, withStates } fr
 import { dayShort, money, timeRange } from '../lib/format.js';
 
 export async function render(mount, params, { setTitle }) {
+  document.body.dataset.miniapp = 'shia-baby';
   setTitle('Shia Baby');
   if (!state.can('business.read') && state.business !== null) { mount.replaceChildren(denied('Shia Baby')); return; }
   if (state.business === null) { mount.replaceChildren(createBusiness(mount)); return; }
@@ -30,14 +31,95 @@ function nav(active) {
 }
 
 function overview(base) {
-  const warnings = base.warnings ?? []; const products = base.products ?? [];
-  return h('div', {},
-    h('div', { class: 'dash', style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: '.75rem', marginBottom: '1rem' } },
-      metric('Employees', base.employees?.length ?? 0), metric('Shifts', base.shifts?.length ?? 0), metric('Low stock', base.lowStock?.length ?? 0), metric('Warnings', warnings.length)),
-    warnings.length ? card('Coverage & schedule warnings', null, ...warnings.slice(0, 8).map((w) => h('p', {}, chip(w.level ?? 'warning', w.level === 'blocking' ? 'alert' : 'warn'), ` ${w.message}`)))
-      : card('Coverage', 'Good', h('p', { style: { color: 'var(--muted)' } }, 'No staffing warnings in the current window.')),
-    products.length ? card('Inventory pulse', null, ...products.slice(0, 8).map((p) => h('p', {}, `${p.name}: ${p.quantityOnHand} on hand`))) : null,
+  const warnings = base.warnings ?? [];
+  const products = base.products ?? [];
+  const employees = base.employees ?? [];
+  const shifts = base.shifts ?? [];
+  const timezone = base.business?.timezone ?? state.timezone;
+  const now = new Date();
+  const todayKey = localDateKey(now, timezone);
+  const todayShifts = shifts.filter((shift) => localDateKey(new Date(shift.startsAt), timezone) === todayKey);
+  const scheduledHours = Math.round(shifts.reduce((sum, shift) => {
+    const start = Date.parse(shift.startsAt); const end = Date.parse(shift.endsAt);
+    return sum + (Number.isFinite(start) && Number.isFinite(end) && end > start ? (end - start) / 3600000 : 0);
+  }, 0) * 10) / 10;
+  const openShifts = shifts.filter((shift) => !shift.employeeId).length;
+
+  const hero = h('section', { class: 'business-hero' },
+    h('div', { class: 'business-hero__head' },
+      h('div', {}, h('h2', { class: 'business-hero__title' }, 'Shia Baby'), h('p', { class: 'muted' }, 'Workspace summary')),
+      h('img', { class: 'business-bear', src: '/brand/shia-baby-bear.png', alt: '' }),
+    ),
+    h('div', { class: 'business-metrics' },
+      businessMetric(employees.length, 'Employee'),
+      businessMetric(todayShifts.length, 'Scheduled today'),
+      businessMetric(scheduledHours, 'Scheduled hours'),
+      businessMetric(openShifts, 'Open shift'),
+    ),
   );
+
+  const employeeSection = employees.length ? h('section', { class: 'section business-section' },
+    h('div', { class: 'section__head' }, h('h2', { class: 'section__title' }, 'Employees')),
+    ...employees.slice(0, 8).map((employee) => h('div', { class: 'business-list-row' },
+      h('span', { class: 'business-avatar', 'aria-hidden': 'true' }, initials(employee.displayName)),
+      h('div', { class: 'business-list-row__main' }, h('strong', {}, employee.displayName), h('span', { class: 'muted tiny' }, `${scheduledHoursFor(base, employee.id)} scheduled hours`)),
+      h('span', { class: 'entry__chevron', 'aria-hidden': 'true' }, '›'),
+    )),
+  ) : null;
+
+  const warningSection = warnings.length ? h('section', { class: 'section business-section' },
+    h('div', { class: 'section__head' }, h('h2', { class: 'section__title' }, 'Warnings')),
+    ...warnings.slice(0, 8).map((w) => h('div', { class: 'business-warning' },
+      h('span', { class: 'business-warning__icon', 'aria-hidden': 'true' }, '!'),
+      h('span', {}, w.message),
+    )),
+  ) : null;
+
+  const shiftSection = shifts.length ? h('section', { class: 'section business-section' },
+    h('div', { class: 'section__head' }, h('h2', { class: 'section__title' }, 'Shifts')),
+    ...shifts.slice(0, 8).map((shift) => {
+      const person = shift.employeeId ? employees.find((employee) => employee.id === shift.employeeId)?.displayName ?? 'Unknown employee' : 'Unassigned';
+      return h('div', { class: 'business-shift-row' },
+        h('span', { class: 'business-avatar', 'aria-hidden': 'true' }, initials(person)),
+        h('div', { class: 'business-list-row__main' },
+          h('strong', {}, person),
+          h('span', { class: 'muted tiny' }, `${dayShort(shift.startsAt, timezone)} · ${timeRange(shift.startsAt, shift.endsAt, timezone)}`),
+          shift.role ? h('span', { class: 'muted tiny' }, shift.role) : null,
+        ),
+        chip(shift.status ?? 'draft', 'quiet'),
+      );
+    }),
+  ) : null;
+
+  const inventoryPulse = products.length ? card('Inventory pulse', null,
+    ...products.slice(0, 8).map((product) => h('p', {}, `${product.name}: ${product.quantityOnHand} on hand`))) : null;
+  inventoryPulse?.classList.add('business-inventory-pulse');
+
+  return h('div', { class: 'business-overview' }, hero, employeeSection, warningSection,
+    shiftSection,
+    h('a', { class: 'btn btn--primary btn--block business-publish-link', href: '/business/staffing' }, 'Open staffing & publish'),
+    inventoryPulse,
+  );
+}
+
+function businessMetric(value, label) {
+  return h('div', { class: 'business-metric' },
+    h('strong', { class: 'business-metric__value' }, String(value)),
+    h('span', { class: 'business-metric__label' }, label),
+  );
+}
+
+function scheduledHoursFor(base, employeeId) {
+  const value = base.hoursByEmployee?.[employeeId];
+  return typeof value === 'number' ? Math.round(value * 10) / 10 : 0;
+}
+
+function initials(name) {
+  return String(name ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase() ?? '').join('') || '?';
+}
+
+function localDateKey(date, timezone) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
 }
 
 function staffing(base, extra, mount) {

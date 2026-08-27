@@ -1,0 +1,19 @@
+{
+  "canvas": "#F7F1E8",
+  "surface": "#FFFDF9",
+  "textPrimary": "#211F1C",
+  "textSecondary": "#756D64",
+  "border": "#E7DCCD",
+  "accentChampagne": "#C59B67",
+  "accentChampagneBright": "#D5B486",
+  "success": "#6F9872",
+  "warning": "#BE7B25",
+  "danger": "#B85F50",
+  "displayFont": "Georgia, Times New Roman, serif",
+  "bodyFont": "system sans-serif",
+  "cardRadiusPx": 24,
+  "heroRadiusPx": 30,
+  "motionFastMs": 140,
+  "motionViewMs": 220,
+  "motionCardMs": 260
+}

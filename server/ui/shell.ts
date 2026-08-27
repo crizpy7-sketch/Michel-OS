@@ -113,13 +113,13 @@ export function renderShell(options: ShellOptions): string {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${title}</title>
 <meta name="description" content="One place for the family's schedule.">
-<meta name="theme-color" content="#0a0f1c">
-<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#f7f1e8">
+<meta name="color-scheme" content="light">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="/app.css?v=${version}">
 <script type="module" src="/app.js?v=${version}"></script>
 </head>
@@ -191,8 +191,8 @@ export function renderManifest(icons: ReadonlyArray<{ src: string; sizes: string
     scope: '/',
     display: 'standalone',
     orientation: 'any',
-    background_color: '#0a0f1c',
-    theme_color: '#0a0f1c',
+    background_color: '#f7f1e8',
+    theme_color: '#f7f1e8',
     icons: icons.map((icon) => ({
       src: icon.src,
       sizes: icon.sizes,

@@ -3,6 +3,8 @@ import { api, query } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { chip, empty, section, select, withStates, whoRow } from '../lib/ui.js';
 import { dayLong, isoDate, relativeDay, time, timeRange } from '../lib/format.js';
+import { forDomain } from '../lib/miniapps.js';
+import { miniAppArt } from '../lib/art.js';
 
 const DAY = 24 * 3600_000;
 const MODES = [['today', 'Today'], ['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['agenda', 'Agenda']];
@@ -97,15 +99,19 @@ function toolbar({ mode, date, member, domain, today, navigate }) {
     onChange: (event) => navigate(pathFor({ date: event.currentTarget.value || today })),
   });
 
-  return h('div', { style: { marginBottom: '1.25rem' } },
-    h('nav', { 'aria-label': 'Schedule view', style: { display: 'flex', gap: '.35rem', overflowX: 'auto', paddingBottom: '.5rem' } },
-      ...MODES.map(([key, label]) => h('a', { class: `btn${mode === key ? ' btn--primary' : ''}`, href: pathFor({ mode: key, date: key === 'today' ? today : date }) }, label)),
+  return h('div', { class: 'schedule-toolbar' },
+    h('div', { class: 'schedule-toolbar__head' },
+      h('p', { class: 'page-kicker' }, mode === 'agenda' || mode === 'week' ? 'This week' : labelFor(mode)),
+      h('nav', { class: 'schedule-mode-tabs', 'aria-label': 'Schedule view' },
+        ...MODES.map(([key, label]) => h('a', { class: `schedule-mode${mode === key ? ' schedule-mode--active' : ''}`, href: pathFor({ mode: key, date: key === 'today' ? today : date }) }, label)),
+      ),
     ),
-    h('div', { style: { display: 'flex', gap: '.5rem', flexWrap: 'wrap', alignItems: 'center' } },
+    weekStrip(date, today, pathFor),
+    h('div', { class: 'schedule-filters' },
       ['day', 'week', 'month'].includes(mode) ? dateInput : null,
-      h('div', { style: { minWidth: '9rem', flex: '1 1 9rem' } }, memberSelect),
-      h('div', { style: { minWidth: '10rem', flex: '1 1 10rem' } }, domainSelect),
-      state.can('event.create') ? h('a', { class: 'btn', href: domain ? `/add?domain=${encodeURIComponent(domain)}` : '/add' }, 'Add') : null,
+      h('div', { class: 'schedule-filter' }, memberSelect),
+      h('div', { class: 'schedule-filter' }, domainSelect),
+      state.can('event.create') ? h('a', { class: 'btn btn--quiet schedule-add', href: domain ? `/add?domain=${encodeURIComponent(domain)}` : '/add' }, 'Add') : null,
     ),
   );
 }
@@ -161,26 +167,56 @@ function localMidnight(date, timezone) {
 }
 
 function eventRow(item, clashes, navigate) {
-  return h('button', {
-    class: `entry${clashes.length ? ' entry--conflict' : ''}`,
+  const app = forDomain(item.domain);
+  const artSlot = app ? h('span', { class: 'entry__art-slot', 'aria-hidden': 'true' }) : null;
+  const row = h('button', {
+    class: `entry schedule-entry${clashes.length ? ' entry--conflict' : ''}`,
     type: 'button',
     onClick: () => navigate(`/event/${encodeURIComponent(item.eventId)}`),
     title: clashes[0] ?? undefined,
   },
+    artSlot,
     h('span', { class: 'entry__time' },
       h('strong', {}, time(item.occurrenceStart, state.timezone)),
       dayLong(item.occurrenceStart, state.timezone).split(',')[0],
     ),
-    h('span', {},
+    h('span', { class: 'entry__main' },
+      item.domain ? h('span', { class: 'entry__eyebrow' }, labelFor(item.domain)) : null,
       h('span', { class: 'entry__title' }, item.title),
       h('span', { class: 'entry__sub' }, timeRange(item.occurrenceStart, item.occurrenceEnd, state.timezone), item.location ? ` · ${item.location}` : ''),
-      clashes.length ? h('span', { class: 'entry__sub' }, clashes[0]) : null,
+      clashes.length ? h('span', { class: 'entry__sub entry__sub--alert' }, clashes[0]) : null,
     ),
-    h('span', { style: { display: 'flex', gap: '.35rem', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' } },
-      item.domain ? chip(labelFor(item.domain), 'quiet') : null,
+    h('span', { class: 'entry__meta' },
       clashes.length ? chip('Clash', 'alert') : null,
       whoRow(item.participantIds ?? []),
+      h('span', { class: 'entry__chevron', 'aria-hidden': 'true' }, '›'),
     ),
+  );
+  if (app && artSlot) {
+    void miniAppArt(app, { size: 56, eager: true }).then((art) => {
+      art.classList.add('entry__art');
+      artSlot.replaceChildren(art);
+    });
+  }
+  return row;
+}
+
+function weekStrip(date, today, pathFor) {
+  const anchor = date || today;
+  const weekday = weekdayOfDate(anchor);
+  const monday = addCalendarDays(anchor, -(weekday === 0 ? 6 : weekday - 1));
+  const formatter = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' });
+  return h('nav', { class: 'schedule-week', 'aria-label': 'Choose day' },
+    ...Array.from({ length: 7 }, (_, index) => {
+      const value = addCalendarDays(monday, index);
+      const [year, month, day] = value.split('-').map(Number);
+      const label = formatter.format(new Date(Date.UTC(year, month - 1, day)));
+      const selected = value === anchor;
+      return h('a', { class: `schedule-day${selected ? ' schedule-day--selected' : ''}`, href: pathFor({ mode: 'day', date: value }) },
+        h('span', { class: 'schedule-day__weekday' }, label),
+        h('span', { class: 'schedule-day__date' }, new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, day)))),
+      );
+    }),
   );
 }
 

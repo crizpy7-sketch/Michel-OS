@@ -26,6 +26,17 @@ async function manifest() {
   return cache;
 }
 
+function fallbackArt(app) {
+  return h('div', {
+    class: 'tile__art',
+    style: {
+      display: 'grid', placeItems: 'center',
+      fontSize: '1.6rem', fontWeight: '700', color: 'var(--faint)',
+    },
+    'aria-hidden': 'true',
+  }, app.label.slice(0, 1));
+}
+
 /**
  * The artwork for one mini-app, or a lettered fallback.
  *
@@ -34,22 +45,41 @@ async function manifest() {
  * not arrived yet — which is exactly what it is.
  */
 export async function miniAppArt(app, { size = 88, eager = false } = {}) {
+  // Shia Baby is a protected brand asset. Use an exact crop from the approved
+  // original source rather than the older concept-board extraction.
+  if (app.key === 'shia-baby') {
+    return h('div', { class: 'tile__art tile__art--shia-original', title: 'Shia Baby original bear artwork' },
+      h('img', {
+        src: '/brand/shia-baby-bear.png', width: size, height: size, alt: '',
+        loading: eager ? 'eager' : 'lazy', decoding: 'async',
+      }),
+    );
+  }
+  if (app.key === 'shopping') {
+    return h('div', { class: 'tile__art tile__art--shopping-approved', title: 'Shopping approved artwork' },
+      h('img', {
+        src: '/brand/shopping-approved.png', width: size, height: size, alt: '',
+        loading: eager ? 'eager' : 'lazy', decoding: 'async',
+      }),
+    );
+  }
+
   const records = await manifest();
   const record = records.get(app.key);
 
-  if (record === undefined) {
-    return h('div', {
-      class: 'tile__art',
-      style: {
-        display: 'grid', placeItems: 'center',
-        fontSize: '1.6rem', fontWeight: '700', color: 'var(--faint)',
-      },
-      'aria-hidden': 'true',
-    }, app.label.slice(0, 1));
-  }
+  if (record === undefined) return fallbackArt(app);
 
-  const one = record.sizes[String(size)];
-  const two = record.sizes[String(size * 2)] ?? one;
+  // Editorial list rows use smaller display sizes than the generated icon
+  // manifest. Pick the nearest larger export instead of assuming every CSS
+  // size has a dedicated asset; that keeps the UI sharp and fail-safe.
+  const available = Object.keys(record.sizes ?? {}).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+  const nearest = (target) => {
+    const key = available.find((candidate) => candidate >= target) ?? available.at(-1);
+    return key === undefined ? undefined : record.sizes[String(key)];
+  };
+  const one = record.sizes?.[String(size)] ?? nearest(size);
+  const two = record.sizes?.[String(size * 2)] ?? nearest(size * 2) ?? one;
+  if (!one?.webp || !one?.png || !two?.webp || !two?.png) return fallbackArt(app);
 
   const picture = h('picture', {},
     h('source', { type: 'image/webp', srcset: `${one.webp} 1x, ${two.webp} 2x` }),

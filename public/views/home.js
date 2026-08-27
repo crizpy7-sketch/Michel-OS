@@ -32,8 +32,8 @@ export async function render(mount, _params, { navigate }) {
     },
     (data) => h('div', {},
       summary(data, navigate),
-      morningBrief(data.brief, navigate),
       grid(),
+      morningBrief(data.brief, navigate),
       nextUp(data, navigate),
     ));
 }
@@ -105,15 +105,18 @@ function partOfDay() {
 /* ------------------------------------------------------------------ grid */
 
 function grid() {
-  const wrapper = h('div', { class: 'grid' });
-  MINI_APPS.forEach((app, index) => {
+  const primaryKeys = new Set([
+    'appointments', 'practice', 'shia-baby', 'school', 'competition', 'games', 'errands', 'hubby-work', 'shopping',
+  ]);
+  const wrapper = h('div', { class: 'grid home-grid' });
+  MINI_APPS.filter((app) => primaryKeys.has(app.key)).forEach((app, index) => {
     if (app.needs !== undefined && !state.can(app.needs)) return;
-    const tile = h('a', { class: 'tile', href: app.route },
+    const tile = h('a', { class: `tile tile--${app.key}`, href: app.route },
       h('div', { class: 'tile__art' }), h('span', { class: 'tile__label' }, app.label));
     wrapper.append(tile);
     void miniAppArt(app, { size: 88, eager: index < 6 }).then((art) => { tile.firstChild.replaceWith(art); });
   });
-  return h('nav', { 'aria-label': 'Mini-apps', style: { marginBottom: '2rem' } }, wrapper);
+  return h('nav', { class: 'home-launcher', 'aria-label': 'Mini-apps' }, wrapper);
 }
 
 /* --------------------------------------------------------------- next up */

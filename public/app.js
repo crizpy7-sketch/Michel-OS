@@ -15,6 +15,7 @@ import { $, $$, focusMain, render } from './lib/dom.js';
 import { ApiError } from './lib/api.js';
 import { refresh, reset, state } from './lib/state.js';
 import { errorState, loading, toast, dismissSheet } from './lib/ui.js';
+import { applyAppearance } from './lib/theme.js';
 
 /* ---------------------------------------------------------------- routes */
 
@@ -81,12 +82,15 @@ async function show() {
   dismissSheet();
 
   const route = match(location.pathname);
+  document.body.dataset.path = location.pathname;
+  document.body.removeAttribute('data-miniapp');
   if (route === null) {
     render(mount, errorState({ message: 'That page does not exist.' }));
     setTitle('Not found');
     return;
   }
 
+  document.body.dataset.route = route.pattern;
   markActiveNav(route.pattern);
   render(mount, loading(route.pattern === '/' ? 'grid' : 'list'));
 
@@ -141,6 +145,8 @@ function markActiveNav(pattern) {
 async function signOutLocally() {
   reset();
   const { render: renderAuth } = await import('./views/auth.js');
+  document.body.dataset.route = 'auth';
+  document.body.dataset.path = '/auth';
   renderAuth($('[data-view]'), { onSignedIn: () => { void start(); } });
   setTitle('Sign in');
 }
@@ -223,4 +229,5 @@ addEventListener('keydown', (event) => {
 addEventListener('online', () => { toast('Back online'); void show(); });
 addEventListener('offline', () => { toast('No connection — showing what was already loaded', 'error'); });
 
+applyAppearance();
 void start();
