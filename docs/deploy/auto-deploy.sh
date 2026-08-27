@@ -42,11 +42,18 @@ HEALTH_URL="http://127.0.0.1:${MICHEL_BIND_PORT:-3100}/api/ready"
 
 cd "$REPO_ROOT"
 
-# Never deploy on top of local edits: they would be silently destroyed by the
-# checkout, and their presence means somebody is working on this box by hand.
-if [ -n "$(git status --porcelain)" ]; then
-  fail "working tree is dirty; refusing to deploy over local changes.
-$(git status --short)"
+# Never deploy on top of local edits to TRACKED files: the checkout below would
+# silently destroy them, and their presence means somebody is working on this
+# box by hand.
+#
+# Untracked files are deliberately not a blocker. `git checkout` does not touch
+# them, so they were never at risk — and treating them as one deadlocked this
+# script against its own output: backup.sh creates docs/deploy/backups/, which
+# made the next run refuse to start. A guard that a script trips on its own
+# side effects is worse than no guard.
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+  fail "tracked files have local modifications; refusing to deploy over them.
+$(git status --short --untracked-files=no)"
 fi
 
 git fetch --quiet origin "$BRANCH" || fail "git fetch failed"
@@ -67,8 +74,17 @@ check_ci() {
   sha="$1"
   remote="$(git remote get-url origin)"
   slug="$(printf '%s' "$remote" | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')"
-  api="https://api.github.com/repos/${slug}/commits/${sha}/check-runs"
+  workflow="${MICHEL_CI_WORKFLOW:-gauntlet.yml}"
+  api="https://api.github.com/repos/${slug}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=10"
 
+  # Keyed on the WORKFLOW FILE, not on a check-run name.
+  #
+  # The first version of this matched check runs whose name contained
+  # "gauntlet". A check run is named after the JOB, not the workflow, and this
+  # repository's job is called "Phase E — adversarial review" — so the match
+  # never fired, every commit came back "cannot establish", and auto-deploy
+  # skipped forever while blaming a missing token. The workflow filename is
+  # the thing that is actually stable.
   if [ -n "${GITHUB_TOKEN:-}" ]; then
     body="$(curl -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
       -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null || true)"
@@ -76,15 +92,20 @@ check_ci() {
     body="$(curl -fsS -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null || true)"
   fi
 
-  [ -n "$body" ] || return 2   # could not establish status
+  [ -n "$body" ] || return 2
+  printf '%s' "$body" | grep -q '"total_count": *0' && return 2
 
-  # Any gauntlet run that is not "success" blocks the deploy. Grepping the
-  # JSON is crude but keeps this dependency-free; jq is not guaranteed present.
-  printf '%s' "$body" | grep -q '"name": *"[^"]*[Gg]auntlet' || return 2
-  printf '%s' "$body" \
-    | tr '}' '\n' \
-    | grep -i 'gauntlet' \
-    | grep -q '"conclusion": *"success"'
+  # jq is not guaranteed on a VPS, so pull the conclusions out with sed.
+  conclusions="$(printf '%s' "$body" | tr '{},' '\n' \
+    | grep -o '"conclusion": *"[^"]*"' | sed 's/.*: *"//; s/"//')"
+  [ -n "$conclusions" ] || return 2
+
+  # A single bad conclusion blocks, even if another run of the same workflow
+  # succeeded: a re-run that went green does not un-break the failure.
+  if printf '%s\n' "$conclusions" | grep -qE '^(failure|cancelled|timed_out|action_required)$'; then
+    return 1
+  fi
+  printf '%s\n' "$conclusions" | grep -q '^success$'
 }
 
 if [ "${MICHEL_REQUIRE_CI:-true}" = "true" ]; then
@@ -93,8 +114,10 @@ if [ "${MICHEL_REQUIRE_CI:-true}" = "true" ]; then
   else
     status=$?
     if [ "$status" -eq 2 ]; then
-      log "SKIP: could not establish gauntlet status for ${TARGET}. Not deploying."
-      log "      Set GITHUB_TOKEN in .env for a private repo, or MICHEL_REQUIRE_CI=false to disable this gate."
+      log "SKIP: no completed ${MICHEL_CI_WORKFLOW:-gauntlet.yml} run found for ${TARGET}. Not deploying."
+      log "      Usually this just means CI is still running; the next tick will pick it up."
+      log "      If it persists: check the workflow ran for this commit, set GITHUB_TOKEN in"
+      log "      .env for a private repo, or set MICHEL_REQUIRE_CI=false to disable this gate."
     else
       log "SKIP: gauntlet did not pass for ${TARGET}. Not deploying."
     fi

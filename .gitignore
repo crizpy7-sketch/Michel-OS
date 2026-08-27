@@ -5,3 +5,8 @@ node_modules/
 # app runtime
 .env
 data/
+
+# Database dumps written by docs/deploy/backup.sh. These contain the household's
+# real data and must never be committable. Ignoring them also stops auto-deploy
+# deadlocking on the directory its own backup step creates.
+docs/deploy/backups/
