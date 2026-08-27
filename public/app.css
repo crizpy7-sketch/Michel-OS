@@ -1562,6 +1562,27 @@ body[data-miniapp='shia-baby'] .topbar__title { color: #1c2e54; }
 body[data-miniapp='hubby-work'] .topbar__title { max-width: 11ch; }
 body[data-miniapp='hubby-work'] .entry__eyebrow { color: #596b89; }
 
+/* Household — the invitation code, which has to be readable and copyable. */
+.invite-card { border-color: rgba(197, 155, 103, .32); }
+.invite-code {
+  margin-top: .9rem;
+  padding: .9rem 1rem;
+  background: #f8efe1;
+  border: 1px solid rgba(197, 155, 103, .32);
+  border-radius: 16px;
+}
+.invite-code__value {
+  margin: 0 0 .5rem;
+  /* A token read character by character needs a face that tells 0 from O. */
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: .82rem;
+  line-height: 1.5;
+  color: #4a4038;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.invite-code .btn { margin-top: .75rem; }
+
 /* Settings */
 .settings-card, .appearance-card { margin-bottom: 1rem; }
 .settings-link { grid-template-columns: 1fr auto; min-height: 3.8rem; box-shadow: none; border-radius: 16px; }
