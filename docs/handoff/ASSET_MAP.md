@@ -14,7 +14,7 @@ The detailed original design boards are preserved in `art/reference/`.
 |---|---|---|
 | Appointments | `public/icons/appointments.png` | APPROVED |
 | Practice | `public/icons/practice.png` | APPROVED — shiny/glittery red + blue pom-poms |
-| Shia Baby | `public/icons/shia-baby.png` | APPROVED |
+| Shia Baby | `public/icons/shia-baby.png` | APPROVED (replaced by the owner — cream knitted bear, navy bow, transparent) |
 | School | `public/icons/school.png` | APPROVED |
 | Competition | `public/icons/competition.png` | APPROVED |
 | Games | `public/icons/games.png` | APPROVED — Valley Cats blue/red wildcat + football |

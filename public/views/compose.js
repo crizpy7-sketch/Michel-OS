@@ -89,14 +89,37 @@ export async function render(mount, _params, { navigate, setTitle }) {
     });
   });
 
+  const active = state.members.filter((m) => m.active !== false);
+
+  /**
+   * Who is responsible.
+   *
+   * The conflict engine flags a child's event with nobody marked responsible,
+   * and it is right to — but this screen had no way to mark anyone, so every
+   * event with a child in it was born as a blocking conflict the family could
+   * not clear. A household of four opened on six clashes, five of them this.
+   *
+   * The API takes `responsibleIds` and always has; only the form was missing.
+   */
+  const canBeResponsible = active.filter((m) => m.role === 'owner' || m.role === 'adult' || m.role === 'teen');
+  const responsible = select(
+    [['', 'Nobody yet'], ...canBeResponsible.map((m) => [m.id, m.displayName])],
+    { name: 'responsible' },
+  );
+  // The person adding it is usually the one taking it on.
+  if (canBeResponsible.some((m) => m.id === state.member?.id)) responsible.value = state.member.id;
+
   const people = h('div', { class: 'compose-people' },
     h('h3', { class: 'compose-subtitle' }, 'People'),
     h('div', { class: 'compose-people__list' },
-      ...state.members.filter((m) => m.active !== false).map((member) => h('label', { class: 'compose-person' },
+      ...active.map((member) => h('label', { class: 'compose-person' },
         h('input', { type: 'checkbox', name: 'participant', value: member.id }),
         h('span', {}, member.displayName),
       )),
     ),
+    field('Responsible', responsible, {
+      hint: 'Who is taking this one. An event with a child and nobody responsible is flagged as a clash.',
+    }),
   );
 
   const form = h('form', { class: 'compose-form', onSubmit: async (event) => {
@@ -105,7 +128,17 @@ export async function render(mount, _params, { navigate, setTitle }) {
     submit.disabled = true;
     try {
       const participantIds = [...form.querySelectorAll('input[name="participant"]:checked')].map((el) => el.value);
-      const body = { title: title.value.trim(), domain: chosenDomain, startsAt: startsAt.value, endsAt: endsAt.value, location: locationInput.value.trim(), notes: notes.value.trim(), participantIds };
+      // The role is only applied to people who are already participants, so
+      // whoever is responsible joins the roster whether or not they were ticked.
+      const responsibleId = responsible.value;
+      if (responsibleId && !participantIds.includes(responsibleId)) participantIds.push(responsibleId);
+      const body = {
+        title: title.value.trim(), domain: chosenDomain,
+        startsAt: startsAt.value, endsAt: endsAt.value,
+        location: locationInput.value.trim(), notes: notes.value.trim(),
+        participantIds,
+        ...(responsibleId ? { responsibleIds: [responsibleId] } : {}),
+      };
       if (repeat.value) body.recurrence = { freq: repeat.value, interval: 1, ...(repeat.value === 'WEEKLY' ? { byWeekday: [weekdayFor(startsAt.value)] } : {}) };
       const saved = await api.post(`/api/households/${state.household.id}/events`, body);
       toast('Added to the family schedule');

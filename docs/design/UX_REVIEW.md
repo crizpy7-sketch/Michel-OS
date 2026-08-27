@@ -156,12 +156,8 @@ defect fix, and it wants its own pass.
 
 ## Not changed, deliberately
 
-- **The conflict engine's severity.** A household of four generates six clashes
-  on day one, five of them "no one is marked as responsible", all rendered as
-  `blocking`. The home screen therefore opens on a red 6 and a wall of red
-  paragraphs. Whether "nobody is responsible for a child at this event" should
-  block is an engine question, not a CSS one, so the presentation layer only
-  stops it from shouting.
+- **The conflict engine's severity.** Left exactly as it is — see the section
+  below, where the cause turned out not to be the engine at all.
 - **The bear, the artwork, the base palette, the motion spec.** The seasonal
   skins were recalibrated — see the themes section above — but Classic, which is
   what the approved reference screens show, is byte-identical to before.
@@ -185,6 +181,48 @@ Two consequences worth knowing about before the next visual change:
 
 Neither is a live bug. Both would be resolved by folding section 13 into the
 token block rather than layering a third set of overrides on top.
+
+---
+
+## The clash storm was the form's fault, not the engine's
+
+A household of four opened on six clashes, five of them "no one is marked as
+responsible", all `blocking`. The obvious read was that the engine was too
+strict, and the obvious fix was to downgrade the severity.
+
+That would have been wrong. `conflicts.ts` raises this when an event has a
+child participant and nobody carries the `responsible` role — a fair thing to
+flag. The API has always accepted `responsibleIds`. **The Add screen simply
+never sent it.** Every event a family created involving a child was therefore
+born as a blocking conflict they had no way to clear, and muting the engine
+would have thrown away a real safety check to hide a missing form field.
+
+Add now has a **Responsible** picker — the adults and teens in the household,
+defaulting to whoever is filling the form in, with a line saying why it matters.
+Whoever is chosen joins the participant roster, because the role is only applied
+to people already on it.
+
+Measured against the running API: a child's event with nobody responsible still
+raises one blocking clash; the same event with a responsible adult raises none.
+The check keeps its teeth and the false alarms stop.
+
+## White on gold was the worst contrast in the app
+
+The primary button's label is ~15px at weight 580 — normal text, so WCAG asks
+4.5:1. Near-white on the champagne gold measured **2.45**, on the most-pressed
+control in the product.
+
+Fixed by putting ink on the gold rather than darkening the gold: **6.46:1**,
+with the brand colour untouched. The alternative was pushing gold toward bronze
+until white cleared 4.5, which loses the champagne entirely. It also restores
+what the original design did — section 6 still reads `color: var(--midnight)`;
+the warm editorial layer was what flipped it to white.
+
+Measuring it turned up a worse one next door. `.tabbar__item[aria-current]`
+paints the active tab gold, and an attribute selector outranks the plain
+`.tabbar__item--primary` class — so on `/add` the filled gold Add button drew
+its label and icon **gold on gold**, measuring **1.00**. The app's most-pressed
+control was invisible on exactly the screen it opens. Both now read 6.46.
 
 ---
 
