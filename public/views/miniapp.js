@@ -2,8 +2,9 @@ import { h } from '../lib/dom.js';
 import { api, query } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { byKey } from '../lib/miniapps.js';
+import { miniAppArt } from '../lib/art.js';
 import { chip, empty, section, withStates, whoRow } from '../lib/ui.js';
-import { relativeDay, time, timeRange } from '../lib/format.js';
+import { relativeDay, time, timeRange, dayLong } from '../lib/format.js';
 
 const DAY = 24 * 3600_000;
 
@@ -13,6 +14,7 @@ export async function render(mount, params, { navigate, setTitle }) {
     mount.replaceChildren(empty({ title: 'Mini-app not found', body: 'That part of Michel OS is not available.' }));
     return;
   }
+  document.body.dataset.miniapp = app.key;
   setTitle(app.label);
   const now = new Date().toISOString();
   const to = new Date(Date.now() + 60 * DAY).toISOString();
@@ -20,19 +22,21 @@ export async function render(mount, params, { navigate, setTitle }) {
     () => api.get(`/api/households/${state.household.id}/occurrences${query({ from: now, to, domain: app.domain })}`),
     (data) => {
       const items = data.occurrences ?? [];
-      return h('div', {},
-        h('div', { style: { display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' } },
-          state.can('event.create') ? h('a', { class: 'btn btn--primary', href: `/add?domain=${encodeURIComponent(app.domain)}` }, `Add ${singular(app.label)}`) : null,
+      const intro = app.key === 'hubby-work' ? h('p', { class: 'page-kicker' }, 'Upcoming schedule') : null;
+      return h('div', { class: `miniapp-page miniapp-page--${app.key}` },
+        h('div', { class: 'miniapp-actions' },
+          intro,
+          state.can('event.create') ? h('a', { class: 'btn btn--quiet miniapp-add', href: `/add?domain=${encodeURIComponent(app.domain)}` }, `+ Add ${singular(app.label)}`) : null,
         ),
         items.length === 0
           ? empty({ title: `No ${app.label.toLowerCase()} yet`, body: 'Anything added here also appears in All Schedules.' })
-          : grouped(items, navigate),
+          : grouped(items, navigate, app),
       );
     },
   );
 }
 
-function grouped(items, navigate) {
+function grouped(items, navigate, app) {
   const groups = new Map();
   const now = new Date().toISOString();
   for (const item of items) {
@@ -41,18 +45,37 @@ function grouped(items, navigate) {
     list.push(item);
     groups.set(day, list);
   }
-  return h('div', {}, ...[...groups.entries()].map(([day, rows]) =>
-    section(day, null, ...rows.map((item) => h('button', {
-      class: 'entry', type: 'button', onClick: () => navigate(`/event/${encodeURIComponent(item.eventId)}`),
-    },
-      h('span', { class: 'entry__time' }, h('strong', {}, time(item.occurrenceStart, state.timezone)), day),
-      h('span', {},
-        h('span', { class: 'entry__title' }, item.title),
-        h('span', { class: 'entry__sub' }, timeRange(item.occurrenceStart, item.occurrenceEnd, state.timezone), item.location ? ` · ${item.location}` : ''),
-      ),
-      h('span', {}, item.allDay ? chip('All day', 'info') : null, whoRow(item.participantIds ?? [])),
-    ))),
+  return h('div', { class: 'miniapp-groups' }, ...[...groups.entries()].map(([day, rows]) =>
+    section(day, null, ...rows.map((item) => eventCard(item, navigate, app))),
   ));
+}
+
+function eventCard(item, navigate, app) {
+  const artSlot = h('span', { class: 'entry__art-slot', 'aria-hidden': 'true' });
+  const row = h('button', {
+    class: 'entry miniapp-entry', type: 'button', onClick: () => navigate(`/event/${encodeURIComponent(item.eventId)}`),
+  },
+    artSlot,
+    h('span', { class: 'entry__time' },
+      h('strong', {}, time(item.occurrenceStart, state.timezone)),
+      dayLong(item.occurrenceStart, state.timezone).split(',')[0],
+    ),
+    h('span', { class: 'entry__main' },
+      h('span', { class: 'entry__eyebrow' }, app.label),
+      h('span', { class: 'entry__title' }, item.title),
+      h('span', { class: 'entry__sub' }, timeRange(item.occurrenceStart, item.occurrenceEnd, state.timezone), item.location ? ` · ${item.location}` : ''),
+    ),
+    h('span', { class: 'entry__meta' },
+      item.allDay ? chip('All day', 'info') : null,
+      whoRow(item.participantIds ?? []),
+      h('span', { class: 'entry__chevron', 'aria-hidden': 'true' }, '›'),
+    ),
+  );
+  void miniAppArt(app, { size: 56, eager: true }).then((art) => {
+    art.classList.add('entry__art');
+    artSlot.replaceChildren(art);
+  });
+  return row;
 }
 
 function singular(label) {
