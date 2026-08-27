@@ -866,6 +866,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --season-a: transparent;
   --season-b: transparent;
   --season-c: transparent;
+  /* Classic has no wallpaper. Each skin below sets one. */
+  --season-motif: none;
+  --season-tile: 260px;
 
   color-scheme: light;
 }
@@ -885,6 +888,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
  * moves only far enough to sit correctly on the season's canvas.
  */
 html[data-skin='christmas'] {
+  --season-motif: url(data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22260%22%20viewBox%3D%220%200%20260%20260%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%232f5741%22%20stroke-width%3D%221.1%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%220.5%22%3E%3Cg%20transform%3D%22translate%2838%2052%29%20rotate%28-14%29%20scale%281%29%22%3E%3Cpath%20d%3D%22M0%20-20%20L0%2020%20M0%20-13%20L-8%20-8%20M0%20-13%20L8%20-8%20M0%20-6%20L-9%200%20M0%20-6%20L9%200%20M0%201%20L-8%207%20M0%201%20L8%207%20M0%208%20L-6%2013%20M0%208%20L6%2013%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28178%2034%29%20rotate%2811%29%20scale%280.8%29%22%3E%3Cpath%20d%3D%22M0%20-20%20L0%2020%20M0%20-13%20L-8%20-8%20M0%20-13%20L8%20-8%20M0%20-6%20L-9%200%20M0%20-6%20L9%200%20M0%201%20L-8%207%20M0%201%20L8%207%20M0%208%20L-6%2013%20M0%208%20L6%2013%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28112%20158%29%20rotate%28-5%29%20scale%280.9%29%22%3E%3Cpath%20d%3D%22M0%20-20%20L0%2020%20M0%20-13%20L-8%20-8%20M0%20-13%20L8%20-8%20M0%20-6%20L-9%200%20M0%20-6%20L9%200%20M0%201%20L-8%207%20M0%201%20L8%207%20M0%208%20L-6%2013%20M0%208%20L6%2013%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28232%20128%29%20rotate%2819%29%20scale%280.72%29%22%3E%3Cpath%20d%3D%22M0%20-20%20L0%2020%20M0%20-13%20L-8%20-8%20M0%20-13%20L8%20-8%20M0%20-6%20L-9%200%20M0%20-6%20L9%200%20M0%201%20L-8%207%20M0%201%20L8%207%20M0%208%20L-6%2013%20M0%208%20L6%2013%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28150%2096%29%20rotate%280%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2858%20190%29%20rotate%280%29%20scale%280.7%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28216%20210%29%20rotate%280%29%20scale%280.6%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2896%2016%29%20rotate%280%29%20scale%280.5%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E);
   --midnight: #eef1e9;
   --navy: #f7f6ef;
   --navy-line: #dae0d2;
@@ -896,6 +900,7 @@ html[data-skin='christmas'] {
 }
 
 html[data-skin='halloween'] {
+  --season-motif: url(data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22260%22%20viewBox%3D%220%200%20260%20260%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%235c4763%22%20stroke-width%3D%221.1%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%220.5%22%3E%3Cg%20transform%3D%22translate%2846%2058%29%20rotate%28-8%29%20scale%281%29%22%3E%3Cpath%20d%3D%22M-14%2018%20C%20-6%206%2C%20-2%20-4%2C%204%20-18%20M-8%208%20L-17%202%20M-4%200%20L6%20-6%20M-11%2014%20L-19%2011%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28186%20168%29%20rotate%28172%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M-14%2018%20C%20-6%206%2C%20-2%20-4%2C%204%20-18%20M-8%208%20L-17%202%20M-4%200%20L6%20-6%20M-11%2014%20L-19%2011%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28124%20226%29%20rotate%2814%29%20scale%280.7%29%22%3E%3Cpath%20d%3D%22M-14%2018%20C%20-6%206%2C%20-2%20-4%2C%204%20-18%20M-8%208%20L-17%202%20M-4%200%20L6%20-6%20M-11%2014%20L-19%2011%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28168%2044%29%20rotate%280%29%20scale%280.9%29%22%3E%3Cpath%20d%3D%22M4.5%20-11%20a%2011%2011%200%201%200%200%2022%20a%207%207%200%201%201%200%20-22%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2852%20168%29%20rotate%280%29%20scale%280.62%29%22%3E%3Cpath%20d%3D%22M4.5%20-11%20a%2011%2011%200%201%200%200%2022%20a%207%207%200%201%201%200%20-22%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28238%20118%29%20rotate%280%29%20scale%280.55%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28104%20120%29%20rotate%280%29%20scale%280.42%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E);
   --midnight: #f3ece4;
   --navy: #faf5ee;
   --navy-line: #e2d6c8;
@@ -907,6 +912,7 @@ html[data-skin='halloween'] {
 }
 
 html[data-skin='valentines'] {
+  --season-motif: url(data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22260%22%20viewBox%3D%220%200%20260%20260%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%239c5a66%22%20stroke-width%3D%221.1%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%220.5%22%3E%3Cg%20transform%3D%22translate%2840%2054%29%20rotate%28-16%29%20scale%281%29%22%3E%3Cpath%20d%3D%22M-2%2020%20C%20-1%208%2C%200%20-4%2C%203%20-18%22%2F%3E%3Cpath%20d%3D%22M-1%2012%20c%20-7%20-1%20-10%20-6%20-8%20-10%20c%205%200%208%205%208%2010%20z%22%2F%3E%3Cpath%20d%3D%22M0%204%20c%207%20-1%2010%20-6%208%20-10%20c%20-5%200%20-8%205%20-8%2010%20z%22%2F%3E%3Cpath%20d%3D%22M1%20-4%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%204%200%207%204%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28180%20160%29%20rotate%2812%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M-2%2020%20C%20-1%208%2C%200%20-4%2C%203%20-18%22%2F%3E%3Cpath%20d%3D%22M-1%2012%20c%20-7%20-1%20-10%20-6%20-8%20-10%20c%205%200%208%205%208%2010%20z%22%2F%3E%3Cpath%20d%3D%22M0%204%20c%207%20-1%2010%20-6%208%20-10%20c%20-5%200%20-8%205%20-8%2010%20z%22%2F%3E%3Cpath%20d%3D%22M1%20-4%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%204%200%207%204%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28240%2044%29%20rotate%28-6%29%20scale%280.7%29%22%3E%3Cpath%20d%3D%22M-2%2020%20C%20-1%208%2C%200%20-4%2C%203%20-18%22%2F%3E%3Cpath%20d%3D%22M-1%2012%20c%20-7%20-1%20-10%20-6%20-8%20-10%20c%205%200%208%205%208%2010%20z%22%2F%3E%3Cpath%20d%3D%22M0%204%20c%207%20-1%2010%20-6%208%20-10%20c%20-5%200%20-8%205%20-8%2010%20z%22%2F%3E%3Cpath%20d%3D%22M1%20-4%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%204%200%207%204%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28150%2088%29%20rotate%28-8%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M0%2011%20C%20-7%204%2C%20-11%200%2C%20-11%20-4%20a%205.6%205.6%200%200%201%2011%20-2.4%20a%205.6%205.6%200%200%201%2011%202.4%20c%200%204%20-4%208%20-11%2015%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2862%20196%29%20rotate%2812%29%20scale%280.68%29%22%3E%3Cpath%20d%3D%22M0%2011%20C%20-7%204%2C%20-11%200%2C%20-11%20-4%20a%205.6%205.6%200%200%201%2011%20-2.4%20a%205.6%205.6%200%200%201%2011%202.4%20c%200%204%20-4%208%20-11%2015%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28212%20226%29%20rotate%28-4%29%20scale%280.55%29%22%3E%3Cpath%20d%3D%22M0%2011%20C%20-7%204%2C%20-11%200%2C%20-11%20-4%20a%205.6%205.6%200%200%201%2011%20-2.4%20a%205.6%205.6%200%200%201%2011%202.4%20c%200%204%20-4%208%20-11%2015%20z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E);
   --midnight: #f8eeec;
   --navy: #fdf6f4;
   --navy-line: #ebd8d6;
@@ -918,6 +924,7 @@ html[data-skin='valentines'] {
 }
 
 html[data-skin='spring'] {
+  --season-motif: url(data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22260%22%20viewBox%3D%220%200%20260%20260%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%235b7a55%22%20stroke-width%3D%221.1%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%220.5%22%3E%3Cg%20transform%3D%22translate%2838%2050%29%20rotate%28-12%29%20scale%281%29%22%3E%3Cpath%20d%3D%22M0%2020%20L0%20-18%22%2F%3E%3Cpath%20d%3D%22M0%2010%20c%20-8%20-1%20-11%20-7%20-9%20-11%20c%206%200%209%206%209%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%201%20c%208%20-1%2011%20-7%209%20-11%20c%20-6%200%20-9%206%20-9%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%20-8%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%205%200%207%205%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28178%20150%29%20rotate%2810%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M0%2020%20L0%20-18%22%2F%3E%3Cpath%20d%3D%22M0%2010%20c%20-8%20-1%20-11%20-7%20-9%20-11%20c%206%200%209%206%209%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%201%20c%208%20-1%2011%20-7%209%20-11%20c%20-6%200%20-9%206%20-9%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%20-8%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%205%200%207%205%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28120%20232%29%20rotate%28-6%29%20scale%280.72%29%22%3E%3Cpath%20d%3D%22M0%2020%20L0%20-18%22%2F%3E%3Cpath%20d%3D%22M0%2010%20c%20-8%20-1%20-11%20-7%20-9%20-11%20c%206%200%209%206%209%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%201%20c%208%20-1%2011%20-7%209%20-11%20c%20-6%200%20-9%206%20-9%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%20-8%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%205%200%207%205%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28160%2048%29%20rotate%280%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M0%20-14.5%20c%205.4%200%208.8%208.8%208.8%2014.4%20a%208.8%208.8%200%200%201%20-17.6%200%20c%200%20-5.6%203.4%20-14.4%208.8%20-14.4%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2856%20172%29%20rotate%280%29%20scale%280.65%29%22%3E%3Cpath%20d%3D%22M0%20-14.5%20c%205.4%200%208.8%208.8%208.8%2014.4%20a%208.8%208.8%200%200%201%20-17.6%200%20c%200%20-5.6%203.4%20-14.4%208.8%20-14.4%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28238%20206%29%20rotate%280%29%20scale%280.55%29%22%3E%3Cpath%20d%3D%22M0%20-14.5%20c%205.4%200%208.8%208.8%208.8%2014.4%20a%208.8%208.8%200%200%201%20-17.6%200%20c%200%20-5.6%203.4%20-14.4%208.8%20-14.4%20z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E);
   --midnight: #eff3ea;
   --navy: #f8faf4;
   --navy-line: #dbe3d5;
@@ -938,18 +945,29 @@ body {
   background-attachment: fixed;
 }
 
+/**
+ * The seasonal wallpaper.
+ *
+ * A repeating tile of engraved botanical line work, fixed so it stays put while
+ * the schedule scrolls over it. It sits on its own layer under the content and
+ * over the body's washes, and Classic leaves it `none`.
+ *
+ * This replaced four decorative dots pinned to the viewport corners — at three
+ * corners out of four they sat behind a card, so most of that flourish was
+ * never visible at all.
+ *
+ * The tiles are inline SVG data URIs (the CSP allows `img-src data:`), so a
+ * skin costs no extra request and nothing to cache-bust on deploy.
+ */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.55;
-  background:
-    radial-gradient(circle at 7% 7%, var(--season-c) 0 2px, transparent 3px),
-    radial-gradient(circle at 93% 13%, var(--season-a) 0 2px, transparent 3px),
-    radial-gradient(circle at 4% 80%, var(--season-b) 0 1px, transparent 2px),
-    radial-gradient(circle at 96% 72%, var(--season-c) 0 1px, transparent 2px);
+  background-image: var(--season-motif);
+  background-repeat: repeat;
+  background-size: var(--season-tile) var(--season-tile);
 }
 
 h1, h2, h3, .topbar__title, .brief__greeting, .tile__label,

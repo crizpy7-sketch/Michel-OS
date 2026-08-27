@@ -217,8 +217,11 @@ Three things were wrong rather than merely weak:
    accents and motion only" — no skin has ever contained a motion rule. The copy
    now says what the skins do.
 
-Recalibrated so each skin moves the canvas, the hairline, the washes and the
-accent together. Mean delta is now 5.4–8.5 with 65–75% of pixels visibly
+Recalibrated so each skin moves the canvas, the hairline, the washes, a
+wallpaper and the accent together. The wallpaper is a repeating tile of engraved
+botanical line work — fir and stars, bare branches and moons, laurel and hearts,
+new growth and eggs — one drawing system at four inks, replacing four decorative
+corner dots of which three sat behind a card at any moment. Mean delta is now 5.4–8.5 with 65–75% of pixels visibly
 changed — three to four times more present, still restrained, and every skin's
 primary-button contrast is at or above Classic's own baseline. Card surfaces and
 body text are identical across all five, so legibility does not move with the

@@ -19,12 +19,43 @@ Automatic windows:
 - Mar 15–Apr 30 → Spring/Easter
 - otherwise Classic
 
-Each skin moves four things:
+Each skin moves five things:
 
 - `--midnight` / `--navy`, the canvas everything sits on
 - `--navy-line`, the hairline between the cards and that canvas
 - `--season-a/b/c`, the three corner washes
+- `--season-motif`, the wallpaper tile (below)
 - `--gold` / `--gold-bright`, far enough to sit correctly on the season's canvas
+
+## The wallpaper
+
+A repeating 260px tile of engraved botanical line work, painted on `body::before`
+-- its own fixed layer under the content and over the washes. Classic sets
+`--season-motif: none` and gets no wallpaper at all.
+
+| Skin | Motif | Ink |
+| --- | --- | --- |
+| Christmas | fir sprigs, six-point stars | evergreen `#2f5741` |
+| Halloween | bare branches, crescent moons | plum `#5c4763` |
+| Valentine's | laurel sprigs, small open hearts | rose `#9c5a66` |
+| Spring / Easter | new-growth sprigs, eggs | sage `#5b7a55` |
+
+One system, four seasons: 1.1px strokes, no fills, no closed silhouettes, drawn
+on the same 260px grid at 0.5 opacity. What changes is the plant and the ink —
+not the hand. That is what keeps them from reading as four sets of holiday
+stickers bolted onto the same app.
+
+The tiles are inline SVG data URIs, which the CSP permits (`img-src 'self'
+data:`), so a season costs no extra request and nothing to cache-bust. They add
+about 9 KB to `app.css`.
+
+They are generated, not hand-written: the source of truth is `motifs.mjs` in the
+design working files, which emits both the shipped CSS and the design canvas, so
+the preview and the product cannot drift.
+
+**Why not the old corner dots.** The previous decoration was four radial-gradient
+dots pinned to the viewport corners. Three of the four sat behind a card at any
+given moment, so most of that flourish was never visible.
 
 They cannot change layout, content hierarchy, icon identity, or any engine
 behavior.
@@ -53,10 +84,13 @@ against classic at 390px that came to a mean per-pixel delta of 1.4–2.6 out of
 
 | Skin | mean Δ | max Δ | % pixels changed >2 | button label contrast |
 | --- | --- | --- | --- | --- |
-| Christmas | 7.75 | 70 | 70% | 2.79 |
-| Halloween | 8.55 | 61 | 75% | 3.49 |
-| Valentine's | 5.36 | 43 | 65% | 2.90 |
-| Spring | 6.54 | 43 | 69% | 2.88 |
+| Christmas | 8.03 | 114 | 70% | 2.79 |
+| Halloween | 8.65 | 93 | 75% | 3.49 |
+| Valentine's | 5.46 | 81 | 65% | 2.90 |
+| Spring | 6.72 | 83 | 69% | 2.88 |
+
+The max deltas are the motif strokes; the means stay low because the wallpaper
+is sparse by design.
 
 Classic's own gold gives that button label 2.45, so every skin reads at least as
 well as the baseline. That baseline is itself under the 3.0 WCAG asks for large
