@@ -9,12 +9,17 @@
  */
 import { tileUrl, TILE } from './motifs.mjs';
 
-/** What ships. Full strength is for the design canvas, not the product. */
-const OPACITY = 0.5;
+/**
+ * The tiles are emitted at full strength. How strong the wallpaper actually
+ * reads is set on the layer in `app.css` (`--season-motif-strength`), because
+ * it has to come down as the viewport grows: a 260px tile that is discreet
+ * behind a phone's cards puts five times as many motifs on a desktop, where
+ * far more bare canvas is showing.
+ */
 
 console.log(`/* --season-tile: ${TILE}px */\n`);
 for (const name of ['christmas', 'halloween', 'valentines', 'spring']) {
   console.log(`html[data-skin='${name}'] {`);
-  console.log(`  --season-motif: ${tileUrl(name, { opacity: OPACITY })};`);
+  console.log(`  --season-motif: ${tileUrl(name)};`);
   console.log('}\n');
 }

@@ -97,7 +97,7 @@ export const TILES = {
  * inside a double-quoted HTML `style` attribute. Getting this wrong produces a
  * silently broken background rather than an error.
  */
-export function tileUrl(name, { opacity }) {
+export function tileUrl(name, { opacity = 1 } = {}) {
   const t = TILES[name];
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${TILE}" height="${TILE}" viewBox="0 0 ${TILE} ${TILE}">` +

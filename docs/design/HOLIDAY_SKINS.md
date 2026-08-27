@@ -41,9 +41,35 @@ A repeating 260px tile of engraved botanical line work, painted on `body::before
 | Spring / Easter | new-growth sprigs, eggs | sage `#5b7a55` |
 
 One system, four seasons: 1.1px strokes, no fills, no closed silhouettes, drawn
-on the same 260px grid at 0.5 opacity. What changes is the plant and the ink —
-not the hand. That is what keeps them from reading as four sets of holiday
-stickers bolted onto the same app.
+on the same 260px grid. What changes is the plant and the ink — not the hand.
+That is what keeps them from reading as four sets of holiday stickers bolted
+onto the same app.
+
+### The wallpaper gets quieter as the screen gets bigger
+
+`--season-motif-strength` is 0.5 on a phone, 0.22 from 48rem, 0.16 from 74rem.
+
+A phone shows the wallpaper only through the gutters — the cards cover nearly
+the whole width. A desktop exposes far more canvas and puts about five times as
+many motifs on screen, and the section headings ("Morning Brief", "Next up") sit
+directly on that canvas with no card behind them. At a flat 0.5 the pattern drew
+straight through them.
+
+Growing the tile instead of easing the strength was tried and is worse: it thins
+the motifs out but draws each one larger, so a tablet gets fewer, more
+conspicuous marks — and it breaks the one thing holding the four seasons
+together, which is that they are drawn at one size by one hand. The tile stays
+260px at every width.
+
+Measured with the layer isolated (the same skin, rendered with and without the
+wallpaper), the motifs touch about 1% of pixels at every width, and peak stroke
+intensity falls with the ramp:
+
+| Width | strength | peak Δ | pixels touched |
+| --- | --- | --- | --- |
+| 390px | 0.5 | 95 | 1.0% |
+| 834px | 0.22 | 43 | 0.9% |
+| 1440px | 0.16 | 31 | 0.7% |
 
 The tiles are inline SVG data URIs, which the CSP permits (`img-src 'self'
 data:`), so a season costs no extra request and nothing to cache-bust. They add

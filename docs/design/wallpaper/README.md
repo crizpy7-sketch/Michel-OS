@@ -28,6 +28,11 @@ swatch can disappear at the 0.5 opacity that actually ships.
 ## The rules the motifs hold to
 
 One drawing system, four seasons: 1.1px strokes, no fills, no closed
-silhouettes, the same 260px grid. What changes between seasons is the plant and
-the ink — not the hand. Break that and they stop being a family and start being
-four sets of holiday stickers on the same app.
+silhouettes, the same 260px grid at every viewport width. What changes between
+seasons is the plant and the ink — not the hand. Break that and they stop being
+a family and start being four sets of holiday stickers on the same app.
+
+The tiles are emitted at full strength; how strongly the wallpaper actually
+reads is `--season-motif-strength` in `app.css`, which eases off as the viewport
+grows. Do not bake opacity back into the SVG — a media query cannot reach it
+there, and a phone and a desktop need different answers.
