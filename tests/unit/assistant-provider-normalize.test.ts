@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { normalizeProviderProposal } from '../../server/api/assistant-provider.ts';
+import { validateAction } from '../../domains/ai/validator.ts';
 import type { AIActionProposal } from '../../lib/contracts/index.ts';
 
 function proposal(type: AIActionProposal['type'], domain: string): AIActionProposal {
@@ -18,6 +19,15 @@ function proposal(type: AIActionProposal['type'], domain: string): AIActionPropo
     confidence: 0.98,
     rationale: 'Recurring personal work schedule.',
   } as AIActionProposal;
+}
+
+function validate(proposed: AIActionProposal) {
+  return validateAction(proposed, {
+    householdId: 'household-1',
+    actorMemberId: 'member-1',
+    now: '2026-08-26T23:00:00.000Z',
+    can: () => true,
+  });
 }
 
 test('OpenAI business synonym becomes work for a recurring calendar schedule', () => {
@@ -61,6 +71,49 @@ test('production regression: Monday through Friday restores all five weekdays', 
     interval: 1,
     byWeekday: ['MO', 'TU', 'WE', 'TH', 'FR'],
   });
+});
+
+test('production regression: alias-style recurrence does not become freq plus frequency', () => {
+  const input = proposal('create_recurring_schedule', 'work');
+  input.payload['recurrence'] = { frequency: 'WEEKLY', every: 1, weekdays: ['TH'] };
+
+  const normalized = normalizeProviderProposal(
+    input,
+    'Cristian works every Monday through Friday from 6:30 AM to 4:00 PM. Add this as my recurring work schedule.',
+  );
+
+  assert.deepEqual(normalized.payload['recurrence'], {
+    frequency: 'WEEKLY',
+    every: 1,
+    weekdays: ['MO', 'TU', 'WE', 'TH', 'FR'],
+  });
+  const verdict = validate(normalized);
+  assert.notEqual(verdict.decision, 'reject', JSON.stringify(verdict));
+});
+
+test('provider-created duplicate recurrence aliases remain visible to the fail-closed validator', () => {
+  const input = proposal('create_recurring_schedule', 'work');
+  input.payload['recurrence'] = {
+    freq: 'WEEKLY',
+    frequency: 'DAILY',
+    interval: 1,
+    byWeekday: ['TH'],
+  };
+
+  const normalized = normalizeProviderProposal(
+    input,
+    'Cristian works every Monday through Friday from 6:30 AM to 4:00 PM.',
+  );
+  const recurrence = normalized.payload['recurrence'] as Record<string, unknown>;
+
+  assert.equal(recurrence['freq'], 'WEEKLY');
+  assert.equal(recurrence['frequency'], 'DAILY');
+  const verdict = validate(normalized);
+  assert.equal(verdict.decision, 'reject');
+  assert.ok(
+    verdict.errors.some((error) => error.message.includes('Ambiguous duplicate spellings for "freq"')),
+    JSON.stringify(verdict),
+  );
 });
 
 test('Monday-to-Friday also repairs a missing byWeekday list', () => {

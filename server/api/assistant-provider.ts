@@ -71,6 +71,7 @@ Rules:
 - The ONLY valid domain values are: ${ALLOWED_DOMAINS.join(', ')}.
 - Personal job/work schedules use domain "work". Never use "business" as a domain. Shia Baby employee/store operations use domain "shia-baby".
 - For a recurring event, use create_recurring_schedule and include a recurrence object.
+- Use only canonical recurrence keys: freq, interval, byWeekday, byMonthDay, until, count, weekStart. Never emit aliases such as frequency, every, weekdays, byday, days, monthdays, month_days, enddate, end_date, or occurrences.
 - For WEEKLY recurrence, recurrence.byWeekday must list EVERY weekday the user requested, using only SU, MO, TU, WE, TH, FR, SA. "Monday through Friday", "Monday to Friday", and "weekdays" mean ["MO","TU","WE","TH","FR"]. Never collapse a multi-day request to only the weekday containing startsAt.
 - For a reminder, a dueAt is required. If the user did not provide enough timing detail, choose classify_inbox_item.
 - For shopping, use add_shopping_item. For a physical trip/task, use create_errand.
@@ -183,6 +184,12 @@ export async function proposeWithOpenAI(context: AssistantProposalContext): Prom
  * domains remain untouched so the validator can reject them. The only
  * recurrence repair comes directly from explicit wording in the original user
  * request, never from a guess about what they probably meant.
+ *
+ * The validator deliberately rejects duplicate aliases (for example `freq`
+ * together with `frequency`). When repairing an explicit weekday request we
+ * therefore update whichever single spelling the provider already used rather
+ * than adding a second equivalent key. If the provider itself supplied two
+ * spellings, both are preserved so the validator still fails closed.
  */
 export function normalizeProviderProposal(
   proposal: AIActionProposal,
@@ -206,20 +213,40 @@ export function normalizeProviderProposal(
     const explicitWeekdays = explicitWeeklyDaysFromRequest(userRequest);
     const recurrence = payload['recurrence'];
     if (explicitWeekdays !== null && isPlainObject(recurrence)) {
-      payload = {
-        ...payload,
-        recurrence: {
-          ...recurrence,
-          freq: 'WEEKLY',
-          interval: 1,
-          byWeekday: [...explicitWeekdays],
-        },
-      };
-      changed = true;
+      let repaired = recurrence;
+      repaired = setUnambiguousRecurrenceField(repaired, 'freq', ['frequency'], 'WEEKLY');
+      repaired = setUnambiguousRecurrenceField(repaired, 'interval', ['every'], 1);
+      repaired = setUnambiguousRecurrenceField(
+        repaired,
+        'byWeekday',
+        ['weekdays', 'byday', 'days'],
+        [...explicitWeekdays],
+      );
+      if (repaired !== recurrence) {
+        payload = { ...payload, recurrence: repaired };
+        changed = true;
+      }
     }
   }
 
   return changed ? { ...proposal, payload } : proposal;
+}
+
+function setUnambiguousRecurrenceField(
+  recurrence: Record<string, unknown>,
+  canonical: string,
+  aliases: readonly string[],
+  value: unknown,
+): Record<string, unknown> {
+  const spellings = [canonical, ...aliases];
+  const present = spellings.filter((key) => Object.prototype.hasOwnProperty.call(recurrence, key));
+
+  // Do not hide provider ambiguity. The security validator owns this decision
+  // and must still see both spellings so it can reject the proposal.
+  if (present.length > 1) return recurrence;
+
+  const key = present[0] ?? canonical;
+  return { ...recurrence, [key]: value };
 }
 
 function explicitWeeklyDaysFromRequest(request: string): readonly string[] | null {
