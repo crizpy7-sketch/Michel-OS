@@ -1,0 +1,26 @@
+[Unit]
+Description=Michel OS — pull-based auto-deploy from origin/main
+Documentation=file:///opt/michel-os/docs/deploy/README.md
+After=docker.service network-online.target
+Wants=network-online.target
+
+# Deliberately NOT Requires=docker.service: if Docker is restarting, the right
+# behaviour is for this run to fail and the next tick to try again, not to drag
+# Docker (and MarketSwarm with it) into this unit's dependency graph.
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/michel-os/docs/deploy
+ExecStart=/bin/sh /opt/michel-os/docs/deploy/auto-deploy.sh
+TimeoutStartSec=1200
+
+# One deploy at a time. Without this a slow build could overlap the next tick
+# and two `compose up` runs would fight over the same containers.
+Restart=no
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=michel-auto-deploy
+
+[Install]
+WantedBy=multi-user.target

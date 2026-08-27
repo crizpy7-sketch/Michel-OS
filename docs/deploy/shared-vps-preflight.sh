@@ -1,6 +1,17 @@
 #!/usr/bin/env sh
 set -eu
 
+cd "$(dirname "$0")"
+. ./lib.sh
+
+# Read .env when it exists so the candidate port and project name match the
+# real deployment rather than the defaults.
+if [ -f .env ]; then
+  michel_load_env
+else
+  MICHEL_PROJECT="${MICHEL_PROJECT:-michel-os}"
+fi
+
 PORT="${MICHEL_BIND_PORT:-3100}"
 
 echo '== Michel OS shared-VPS preflight =='
@@ -36,11 +47,30 @@ if command -v ss >/dev/null 2>&1; then
   ss -ltnp 2>/dev/null | grep -E ":(80|443|${PORT})\\b" || true
 fi
 
-# Refuse to start Michel when the candidate loopback port is already occupied.
-# 80/443 may legitimately be occupied by the existing reverse proxy.
+# A busy candidate port has two opposite meanings, and the difference decides
+# what the operator should do next:
+#
+#   published by OUR OWN compose project -> Michel is already deployed here, so
+#     this is a redeploy. `docker compose up` replaces its own container and
+#     rebinds the port. Changing MICHEL_BIND_PORT here would be actively wrong:
+#     it orphans the reverse-proxy config and leaves two copies running.
+#
+#   published by anything else -> a genuine collision. Stop.
+#
+# Reporting the first case as a hard error made a routine upgrade look like a
+# blocked first install, so the check now identifies the owner before judging.
+# 80/443 may legitimately belong to the existing reverse proxy either way.
 if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -Eq "(^|[[:space:]])[^[:space:]]*:${PORT}[[:space:]]"; then
-  echo "ERROR: port ${PORT} is already in use. Set MICHEL_BIND_PORT to a free loopback port." >&2
-  exit 3
+  if michel_owns_port "$PORT"; then
+    echo
+    echo "NOTE: port ${PORT} is published by this deployment's own project (${MICHEL_PROJECT})."
+    echo 'Michel OS is already running here — this is an upgrade, not a first install.'
+    echo 'Do NOT change MICHEL_BIND_PORT; compose replaces its own container in place.'
+  else
+    echo "ERROR: port ${PORT} is in use by something that is not Michel OS." >&2
+    echo 'Set MICHEL_BIND_PORT to a free loopback port and point the reverse proxy at it.' >&2
+    exit 3
+  fi
 fi
 
 echo
