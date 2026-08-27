@@ -168,7 +168,11 @@ function localMidnight(date, timezone) {
 
 function eventRow(item, clashes, navigate) {
   const app = forDomain(item.domain);
-  const artSlot = app ? h('span', { class: 'entry__art-slot', 'aria-hidden': 'true' }) : null;
+  // The slot is always rendered, even when the domain has no artwork. These
+  // rows are a grid, and on a phone the time cell is `display: none`, so a row
+  // that skips the art cell shifts its title into the 3.5rem artwork column and
+  // wraps it one word per line.
+  const artSlot = h('span', { class: 'entry__art-slot', 'aria-hidden': 'true' });
   const row = h('button', {
     class: `entry schedule-entry${clashes.length ? ' entry--conflict' : ''}`,
     type: 'button',
@@ -192,7 +196,7 @@ function eventRow(item, clashes, navigate) {
       h('span', { class: 'entry__chevron', 'aria-hidden': 'true' }, '›'),
     ),
   );
-  if (app && artSlot) {
+  if (app) {
     void miniAppArt(app, { size: 56, eager: true }).then((art) => {
       art.classList.add('entry__art');
       artSlot.replaceChildren(art);

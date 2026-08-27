@@ -45,16 +45,12 @@ function fallbackArt(app) {
  * not arrived yet — which is exactly what it is.
  */
 export async function miniAppArt(app, { size = 88, eager = false } = {}) {
-  // Shia Baby is a protected brand asset. Use an exact crop from the approved
-  // original source rather than the older concept-board extraction.
-  if (app.key === 'shia-baby') {
-    return h('div', { class: 'tile__art tile__art--shia-original', title: 'Shia Baby original bear artwork' },
-      h('img', {
-        src: '/brand/shia-baby-bear.png', width: size, height: size, alt: '',
-        loading: eager ? 'eager' : 'lazy', decoding: 'async',
-      }),
-    );
-  }
+  // Shia Baby used to be special-cased here, loading the full brand file
+  // because `public/icons/shia-baby.png` was once a crop off a concept board.
+  // That source has been a real export for a while, so the special case only
+  // meant the tile fetched 532 KB of opaque PNG to draw an 88px square that the
+  // derived pipeline already had at 4 KB — and being opaque, it could not sit
+  // on the seasonal wallpaper. It now goes through the manifest like the rest.
   if (app.key === 'shopping') {
     return h('div', { class: 'tile__art tile__art--shopping-approved', title: 'Shopping approved artwork' },
       h('img', {

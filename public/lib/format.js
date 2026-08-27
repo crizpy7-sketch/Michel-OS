@@ -96,6 +96,57 @@ export function initial(name) {
 export const plural = (count, one, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
 /**
+ * A wire status turned into something a person would say.
+ *
+ * These values reach the screen straight out of the API — `needed`,
+ * `purchased`, `blocking`, `draft` — and a lowercase enum in a chip reads like
+ * a database leak. Anything not in the table falls back to sentence case rather
+ * than being dropped, so a status added later is ugly rather than invisible.
+ */
+const STATUS_WORDS = {
+  needed: 'To buy',
+  purchased: 'Bought',
+  open: 'Open',
+  done: 'Done',
+  pending: 'Waiting',
+  completed: 'Done',
+  dismissed: 'Dismissed',
+  snoozed: 'Snoozed',
+  draft: 'Draft',
+  published: 'Published',
+  confirmed: 'Confirmed',
+  cancelled: 'Cancelled',
+  blocking: 'Blocking',
+  warning: 'Heads up',
+  info: 'Note',
+};
+
+export function statusLabel(value, fallback = '') {
+  const key = String(value ?? '').trim().toLowerCase();
+  if (key.length === 0) return fallback;
+  if (key in STATUS_WORDS) return STATUS_WORDS[key];
+  const words = key.replace(/[-_]+/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Turn the ISO dates inside an engine-generated message into readable ones.
+ *
+ * The staffing engine composes its warnings with `2026-08-29` in them, which is
+ * right for a log and wrong for a person reading their own shop's coverage.
+ * Rewriting only the date literals leaves the engine's wording — and its
+ * meaning — exactly as the engine wrote it.
+ */
+export function humaniseDates(message) {
+  return String(message ?? '').replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (whole, y, m, d) => {
+    const date = new Date(Date.UTC(Number(y), Number(m) - 1, Number(d)));
+    return Number.isNaN(date.getTime()) ? whole : formatter('UTC', {
+      weekday: 'short', month: 'short', day: 'numeric',
+    }).format(date);
+  });
+}
+
+/**
  * A stable colour for a member, when they have not chosen one.
  *
  * Derived from the id so it never changes between sessions, and drawn from a

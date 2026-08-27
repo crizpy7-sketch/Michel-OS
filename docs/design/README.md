@@ -17,7 +17,21 @@ Michel OS should feel like a premium family operating system: calm, editorial, w
 
 ## Protected artwork
 
-`public/brand/shia-baby-bear.png` is an exact crop from `art/source/shia-baby-original.jpeg`. Do not replace, recolor, or regenerate the bear.
+The Shia Baby bear is the brand and is not to be recoloured or regenerated. It
+was replaced once, deliberately, by the owner: the current bear is a cream
+knitted bear with a navy bow, supplied as a transparent PNG.
+
+It lives in two places, both generated from that one supplied file:
+
+- `public/icons/shia-baby.png` — 1024×1024, the source the icon pipeline reads.
+  Run `npm run icons` after changing it.
+- `public/brand/shia-baby-bear.png` — 256×256, used only by the Shia Baby hero.
+
+The earlier bear was an opaque crop from `art/source/shia-baby-original.jpeg`,
+and `public/lib/art.js` special-cased the mini-app tile to load that 532 KB file
+directly instead of the 4 KB derived asset. That special case is gone: the tile
+now goes through the manifest like the other twelve icons, and the artwork being
+transparent means it sits on the seasonal wallpaper instead of over it.
 
 ## Reference screens
 

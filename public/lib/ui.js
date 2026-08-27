@@ -197,14 +197,25 @@ export function who(member) {
   }, initial(name));
 }
 
+/**
+ * The row of avatars on a list row.
+ *
+ * Three, then a count. Four overlapping avatars plus a clash chip is wide
+ * enough to squeeze the title of the row they are describing, and the fourth
+ * face buys almost nothing: the `aria-label` and the event screen both carry
+ * the full list of names.
+ */
+const WHO_SHOWN = 3;
+
 export function whoRow(memberIds) {
   const people = memberIds.map((id) => state.memberById(id)).filter(Boolean);
   if (people.length === 0) return null;
+  const overflow = people.length - WHO_SHOWN;
   return h('span', {
     class: 'who-row',
     'aria-label': people.map((p) => p.displayName).join(', '),
-  }, ...people.slice(0, 4).map(who),
-    people.length > 4 ? h('span', { class: 'who' }, `+${people.length - 4}`) : null);
+  }, ...people.slice(0, WHO_SHOWN).map(who),
+    overflow > 0 ? h('span', { class: 'who who--more', 'aria-hidden': 'true' }, `+${overflow}`) : null);
 }
 
 export const chip = (text, kind = 'quiet') => h('span', { class: `chip chip--${kind}` }, text);

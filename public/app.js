@@ -73,6 +73,9 @@ export function navigate(href, { replace = false } = {}) {
   void show();
 }
 
+/** The five destinations in the tab bar / rail, which `renderShell` also owns. */
+const TAB_ROOTS = new Set(['/', '/schedule', '/add', '/assistant', '/more']);
+
 async function show() {
   // Every navigation gets a token. An older view that finishes loading after a
   // newer one started must not paint over it — that is the bug where tapping
@@ -110,7 +113,10 @@ async function show() {
   if (token !== currentToken) return;
 
   setTitle(route.title);
-  $('[data-back]').hidden = route.pattern === '/' || history.length <= 1;
+  // A tab bar destination is a root, not somewhere you arrived from, so it does
+  // not get a back chevron — tapping Schedule and being offered "back" is the
+  // kind of small wrongness that makes an app feel like a website.
+  $('[data-back]').hidden = TAB_ROOTS.has(route.pattern) || history.length <= 1;
 
   try {
     await module.render(mount, route.params, { navigate, setTitle });
@@ -122,7 +128,64 @@ async function show() {
   }
 
   if (token === currentToken) focusMain();
+  if (token === currentToken) shownAt = Date.now();
 }
+
+/* ------------------------------------------------------- refresh on return */
+
+/**
+ * Re-fetch when the app comes back to the foreground.
+ *
+ * Two people share one household, and nothing is pushed from the server. Until
+ * now a screen only refreshed when you navigated, so a phone left open on Home
+ * showed whatever was true when it was last opened — the other person's new
+ * event was simply missing, with nothing to suggest the screen was old.
+ *
+ * Three guards, because a refresh in the wrong moment is worse than a stale
+ * screen:
+ *
+ *   1. Only after the view has been up a while. Flicking to another app for
+ *      three seconds should not reload anything.
+ *   2. Never while a form holds typing. `show()` rebuilds the view, so a
+ *      refresh mid-way through adding an event would silently discard it —
+ *      exactly when somebody checked another app for the date.
+ *   3. Never offline, where the fetch would only replace the screen with an
+ *      error.
+ */
+const STALE_AFTER_MS = 30_000;
+let shownAt = 0;
+
+/** Anything the person has typed or ticked and not yet submitted. */
+function hasUnsavedInput() {
+  const mount = $('[data-view]');
+  if (mount === null) return false;
+  for (const el of mount.querySelectorAll('input, textarea')) {
+    if (el.type === 'checkbox' || el.type === 'radio') {
+      if (el.checked !== el.defaultChecked) return true;
+      continue;
+    }
+    if (el.type === 'hidden') continue;
+    if (el.value !== el.defaultValue) return true;
+  }
+  return false;
+}
+
+function refreshIfStale() {
+  if (document.visibilityState !== 'visible') return;
+  if (!navigator.onLine) return;
+  if (Date.now() - shownAt < STALE_AFTER_MS) return;
+  if (hasUnsavedInput()) return;
+  void show();
+}
+
+// On `document`, not `window`: `visibilitychange` is fired at the Document. It
+// bubbles, so a window listener does usually see it — but binding a document
+// event to window is the kind of thing that works until something stops it
+// bubbling, and it is not what any reader would expect.
+document.addEventListener('visibilitychange', refreshIfStale);
+// `visibilitychange` covers tab switches; `focus` catches coming back to the
+// browser from another desktop application, where it need not fire.
+addEventListener('focus', refreshIfStale);
 
 function setTitle(title) {
   const heading = $('[data-title]');

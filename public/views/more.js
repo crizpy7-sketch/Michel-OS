@@ -23,7 +23,9 @@ export async function render(mount) {
   account.classList.add('settings-card');
 
   const appearanceCard = card('Appearance', 'visual only',
-    h('p', { class: 'muted' }, 'Seasonal skins change atmosphere, accents and motion only. Your schedule, Assistant, permissions and Shia Baby engine stay exactly the same.'),
+    // This said "atmosphere, accents and motion". No skin has ever carried a
+    // motion rule, and promising one is worse than not having it.
+    h('p', { class: 'muted' }, 'Seasonal skins change the background and accent colours only. Your schedule, Assistant, permissions and Shia Baby engine stay exactly the same.'),
     h('label', { class: 'field' }, h('span', { class: 'field__label' }, 'Seasonal appearance'), appearance),
   );
   appearanceCard.classList.add('appearance-card');

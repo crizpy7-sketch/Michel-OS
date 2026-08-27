@@ -82,6 +82,11 @@
   /* §8: 44px-ish touch targets, as a token so no control can forget. */
   --touch: 44px;
 
+  /* How much of a list row the trailing chip/avatar cluster may claim. It is a
+     token because the phone has to give the title more of the row than the
+     desktop does, and the two grids that use it must agree. */
+  --entry-meta-w: 9.5rem;
+
   --nav-h: 4.25rem;
   --rail-w: 5.5rem;
   --sidebar-w: 16rem;
@@ -438,7 +443,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .entry {
   display: grid;
-  grid-template-columns: 4.25rem 1fr auto;
+  /* The last track is capped rather than `auto`. A max-content track sized to a
+     clash chip plus four avatars wins every fight against a `1fr` sibling, and
+     the title column is what loses — it collapses to one word per line. */
+  grid-template-columns: 4.25rem minmax(0, 1fr) minmax(0, var(--entry-meta-w));
   align-items: center; gap: var(--s3);
   padding: var(--s3) var(--s4);
   background: var(--navy-raised);
@@ -475,6 +483,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: rgba(245,242,234,0.07);
   border: 1px solid var(--navy-line);
   border-radius: var(--radius-pill);
+  /* `.btn` is used on <a> as often as on <button>; without this the global
+     anchor underline draws straight through every link-shaped button. */
+  text-decoration: none;
   cursor: pointer;
   transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
   -webkit-tap-highlight-color: transparent;
@@ -549,8 +560,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   box-shadow: 0 0 0 1px var(--navy);
 }
 
-.who-row { display: flex; }
+.who-row { display: flex; flex: 0 0 auto; }
 .who-row .who + .who { margin-inline-start: -0.45rem; }
+/* "+2" is a count, so it does not take a member colour to be mistaken for one. */
+.who--more { background: var(--graphite); color: var(--navy); font-variant-numeric: tabular-nums; }
 
 /* ========================================================== 7. states */
 
@@ -853,34 +866,76 @@ button, input, select, textarea { font: inherit; color: inherit; }
   --season-a: transparent;
   --season-b: transparent;
   --season-c: transparent;
+  /* Classic has no wallpaper. Each skin below sets one. */
+  --season-motif: none;
+  --season-tile: 260px;
+  /* How strongly the wallpaper reads. It comes down as the viewport grows —
+     see the breakpoint note under `body::before`. */
+  --season-motif-strength: 0.5;
 
   color-scheme: light;
 }
 
+/**
+ * The seasonal skins.
+ *
+ * Each one moves three things: the canvas it is all sitting on, the hairline
+ * that separates the cards from it, and the corner washes. The canvas is what
+ * makes a skin read as a skin — three translucent gradients over an unchanged
+ * ivory measured out at roughly one part in 255, which is a change nobody can
+ * see on a phone in daylight.
+ *
+ * What they deliberately do NOT do is repaint the gold. It is the primary
+ * action colour on every screen — the Add button, the submit, the next event —
+ * and a red one in December is a different product, not a seasonal skin. Gold
+ * moves only far enough to sit correctly on the season's canvas.
+ */
 html[data-skin='christmas'] {
-  --season-a: rgba(43, 91, 67, 0.14);
-  --season-b: rgba(137, 42, 39, 0.08);
-  --season-c: rgba(212, 180, 126, 0.14);
+  --season-motif: url(data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22260%22%20viewBox%3D%220%200%20260%20260%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%232f5741%22%20stroke-width%3D%221.1%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%221%22%3E%3Cg%20transform%3D%22translate%2838%2052%29%20rotate%28-14%29%20scale%281%29%22%3E%3Cpath%20d%3D%22M0%20-20%20L0%2020%20M0%20-13%20L-8%20-8%20M0%20-13%20L8%20-8%20M0%20-6%20L-9%200%20M0%20-6%20L9%200%20M0%201%20L-8%207%20M0%201%20L8%207%20M0%208%20L-6%2013%20M0%208%20L6%2013%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28178%2034%29%20rotate%2811%29%20scale%280.8%29%22%3E%3Cpath%20d%3D%22M0%20-20%20L0%2020%20M0%20-13%20L-8%20-8%20M0%20-13%20L8%20-8%20M0%20-6%20L-9%200%20M0%20-6%20L9%200%20M0%201%20L-8%207%20M0%201%20L8%207%20M0%208%20L-6%2013%20M0%208%20L6%2013%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28112%20158%29%20rotate%28-5%29%20scale%280.9%29%22%3E%3Cpath%20d%3D%22M0%20-20%20L0%2020%20M0%20-13%20L-8%20-8%20M0%20-13%20L8%20-8%20M0%20-6%20L-9%200%20M0%20-6%20L9%200%20M0%201%20L-8%207%20M0%201%20L8%207%20M0%208%20L-6%2013%20M0%208%20L6%2013%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28232%20128%29%20rotate%2819%29%20scale%280.72%29%22%3E%3Cpath%20d%3D%22M0%20-20%20L0%2020%20M0%20-13%20L-8%20-8%20M0%20-13%20L8%20-8%20M0%20-6%20L-9%200%20M0%20-6%20L9%200%20M0%201%20L-8%207%20M0%201%20L8%207%20M0%208%20L-6%2013%20M0%208%20L6%2013%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28150%2096%29%20rotate%280%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2858%20190%29%20rotate%280%29%20scale%280.7%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28216%20210%29%20rotate%280%29%20scale%280.6%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2896%2016%29%20rotate%280%29%20scale%280.5%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E);
+  --midnight: #eef1e9;
+  --navy: #f7f6ef;
+  --navy-line: #dae0d2;
+  --season-a: rgba(38, 88, 63, 0.30);
+  --season-b: rgba(150, 44, 40, 0.18);
+  --season-c: rgba(206, 172, 116, 0.28);
+  --gold: #bd8f5c;
+  --gold-bright: #d0aa79;
 }
 
 html[data-skin='halloween'] {
-  --season-a: rgba(86, 55, 93, 0.12);
-  --season-b: rgba(176, 104, 38, 0.10);
-  --season-c: rgba(66, 54, 47, 0.08);
-  --gold: #b98b59;
-  --gold-bright: #cda773;
+  --season-motif: url(data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22260%22%20viewBox%3D%220%200%20260%20260%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%235c4763%22%20stroke-width%3D%221.1%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%221%22%3E%3Cg%20transform%3D%22translate%2846%2058%29%20rotate%28-8%29%20scale%281%29%22%3E%3Cpath%20d%3D%22M-14%2018%20C%20-6%206%2C%20-2%20-4%2C%204%20-18%20M-8%208%20L-17%202%20M-4%200%20L6%20-6%20M-11%2014%20L-19%2011%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28186%20168%29%20rotate%28172%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M-14%2018%20C%20-6%206%2C%20-2%20-4%2C%204%20-18%20M-8%208%20L-17%202%20M-4%200%20L6%20-6%20M-11%2014%20L-19%2011%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28124%20226%29%20rotate%2814%29%20scale%280.7%29%22%3E%3Cpath%20d%3D%22M-14%2018%20C%20-6%206%2C%20-2%20-4%2C%204%20-18%20M-8%208%20L-17%202%20M-4%200%20L6%20-6%20M-11%2014%20L-19%2011%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28168%2044%29%20rotate%280%29%20scale%280.9%29%22%3E%3Cpath%20d%3D%22M4.5%20-11%20a%2011%2011%200%201%200%200%2022%20a%207%207%200%201%201%200%20-22%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2852%20168%29%20rotate%280%29%20scale%280.62%29%22%3E%3Cpath%20d%3D%22M4.5%20-11%20a%2011%2011%200%201%200%200%2022%20a%207%207%200%201%201%200%20-22%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28238%20118%29%20rotate%280%29%20scale%280.55%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28104%20120%29%20rotate%280%29%20scale%280.42%29%22%3E%3Cpath%20d%3D%22M0%20-9%20L0%209%20M-7.8%20-4.5%20L7.8%204.5%20M-7.8%204.5%20L7.8%20-4.5%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E);
+  --midnight: #f3ece4;
+  --navy: #faf5ee;
+  --navy-line: #e2d6c8;
+  --season-a: rgba(86, 55, 93, 0.30);
+  --season-b: rgba(190, 106, 30, 0.26);
+  --season-c: rgba(66, 54, 47, 0.18);
+  --gold: #b07c3c;
+  --gold-bright: #c7954f;
 }
 
 html[data-skin='valentines'] {
-  --season-a: rgba(185, 104, 116, 0.10);
-  --season-b: rgba(219, 172, 174, 0.14);
-  --season-c: rgba(201, 151, 117, 0.11);
+  --season-motif: url(data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22260%22%20viewBox%3D%220%200%20260%20260%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%239c5a66%22%20stroke-width%3D%221.1%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%221%22%3E%3Cg%20transform%3D%22translate%2840%2054%29%20rotate%28-16%29%20scale%281%29%22%3E%3Cpath%20d%3D%22M-2%2020%20C%20-1%208%2C%200%20-4%2C%203%20-18%22%2F%3E%3Cpath%20d%3D%22M-1%2012%20c%20-7%20-1%20-10%20-6%20-8%20-10%20c%205%200%208%205%208%2010%20z%22%2F%3E%3Cpath%20d%3D%22M0%204%20c%207%20-1%2010%20-6%208%20-10%20c%20-5%200%20-8%205%20-8%2010%20z%22%2F%3E%3Cpath%20d%3D%22M1%20-4%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%204%200%207%204%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28180%20160%29%20rotate%2812%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M-2%2020%20C%20-1%208%2C%200%20-4%2C%203%20-18%22%2F%3E%3Cpath%20d%3D%22M-1%2012%20c%20-7%20-1%20-10%20-6%20-8%20-10%20c%205%200%208%205%208%2010%20z%22%2F%3E%3Cpath%20d%3D%22M0%204%20c%207%20-1%2010%20-6%208%20-10%20c%20-5%200%20-8%205%20-8%2010%20z%22%2F%3E%3Cpath%20d%3D%22M1%20-4%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%204%200%207%204%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28240%2044%29%20rotate%28-6%29%20scale%280.7%29%22%3E%3Cpath%20d%3D%22M-2%2020%20C%20-1%208%2C%200%20-4%2C%203%20-18%22%2F%3E%3Cpath%20d%3D%22M-1%2012%20c%20-7%20-1%20-10%20-6%20-8%20-10%20c%205%200%208%205%208%2010%20z%22%2F%3E%3Cpath%20d%3D%22M0%204%20c%207%20-1%2010%20-6%208%20-10%20c%20-5%200%20-8%205%20-8%2010%20z%22%2F%3E%3Cpath%20d%3D%22M1%20-4%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%204%200%207%204%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28150%2088%29%20rotate%28-8%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M0%2011%20C%20-7%204%2C%20-11%200%2C%20-11%20-4%20a%205.6%205.6%200%200%201%2011%20-2.4%20a%205.6%205.6%200%200%201%2011%202.4%20c%200%204%20-4%208%20-11%2015%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2862%20196%29%20rotate%2812%29%20scale%280.68%29%22%3E%3Cpath%20d%3D%22M0%2011%20C%20-7%204%2C%20-11%200%2C%20-11%20-4%20a%205.6%205.6%200%200%201%2011%20-2.4%20a%205.6%205.6%200%200%201%2011%202.4%20c%200%204%20-4%208%20-11%2015%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28212%20226%29%20rotate%28-4%29%20scale%280.55%29%22%3E%3Cpath%20d%3D%22M0%2011%20C%20-7%204%2C%20-11%200%2C%20-11%20-4%20a%205.6%205.6%200%200%201%2011%20-2.4%20a%205.6%205.6%200%200%201%2011%202.4%20c%200%204%20-4%208%20-11%2015%20z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E);
+  --midnight: #f8eeec;
+  --navy: #fdf6f4;
+  --navy-line: #ebd8d6;
+  --season-a: rgba(178, 88, 104, 0.26);
+  --season-b: rgba(214, 156, 162, 0.30);
+  --season-c: rgba(201, 151, 117, 0.22);
+  --gold: #c2848a;
+  --gold-bright: #d5a3a6;
 }
 
 html[data-skin='spring'] {
-  --season-a: rgba(125, 155, 121, 0.12);
-  --season-b: rgba(151, 132, 184, 0.09);
-  --season-c: rgba(218, 188, 135, 0.10);
+  --season-motif: url(data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22260%22%20height%3D%22260%22%20viewBox%3D%220%200%20260%20260%22%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%235b7a55%22%20stroke-width%3D%221.1%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%20opacity%3D%221%22%3E%3Cg%20transform%3D%22translate%2838%2050%29%20rotate%28-12%29%20scale%281%29%22%3E%3Cpath%20d%3D%22M0%2020%20L0%20-18%22%2F%3E%3Cpath%20d%3D%22M0%2010%20c%20-8%20-1%20-11%20-7%20-9%20-11%20c%206%200%209%206%209%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%201%20c%208%20-1%2011%20-7%209%20-11%20c%20-6%200%20-9%206%20-9%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%20-8%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%205%200%207%205%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28178%20150%29%20rotate%2810%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M0%2020%20L0%20-18%22%2F%3E%3Cpath%20d%3D%22M0%2010%20c%20-8%20-1%20-11%20-7%20-9%20-11%20c%206%200%209%206%209%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%201%20c%208%20-1%2011%20-7%209%20-11%20c%20-6%200%20-9%206%20-9%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%20-8%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%205%200%207%205%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28120%20232%29%20rotate%28-6%29%20scale%280.72%29%22%3E%3Cpath%20d%3D%22M0%2020%20L0%20-18%22%2F%3E%3Cpath%20d%3D%22M0%2010%20c%20-8%20-1%20-11%20-7%20-9%20-11%20c%206%200%209%206%209%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%201%20c%208%20-1%2011%20-7%209%20-11%20c%20-6%200%20-9%206%20-9%2011%20z%22%2F%3E%3Cpath%20d%3D%22M0%20-8%20c%20-6%20-1%20-9%20-5%20-7%20-9%20c%205%200%207%205%207%209%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28160%2048%29%20rotate%280%29%20scale%280.85%29%22%3E%3Cpath%20d%3D%22M0%20-14.5%20c%205.4%200%208.8%208.8%208.8%2014.4%20a%208.8%208.8%200%200%201%20-17.6%200%20c%200%20-5.6%203.4%20-14.4%208.8%20-14.4%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%2856%20172%29%20rotate%280%29%20scale%280.65%29%22%3E%3Cpath%20d%3D%22M0%20-14.5%20c%205.4%200%208.8%208.8%208.8%2014.4%20a%208.8%208.8%200%200%201%20-17.6%200%20c%200%20-5.6%203.4%20-14.4%208.8%20-14.4%20z%22%2F%3E%3C%2Fg%3E%3Cg%20transform%3D%22translate%28238%20206%29%20rotate%280%29%20scale%280.55%29%22%3E%3Cpath%20d%3D%22M0%20-14.5%20c%205.4%200%208.8%208.8%208.8%2014.4%20a%208.8%208.8%200%200%201%20-17.6%200%20c%200%20-5.6%203.4%20-14.4%208.8%20-14.4%20z%22%2F%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E);
+  --midnight: #eff3ea;
+  --navy: #f8faf4;
+  --navy-line: #dbe3d5;
+  --season-a: rgba(116, 154, 111, 0.28);
+  --season-b: rgba(146, 126, 182, 0.22);
+  --season-c: rgba(214, 184, 128, 0.26);
+  --gold: #a8944f;
+  --gold-bright: #bfab68;
 }
 
 body {
@@ -893,18 +948,52 @@ body {
   background-attachment: fixed;
 }
 
+/**
+ * The seasonal wallpaper.
+ *
+ * A repeating tile of engraved botanical line work, fixed so it stays put while
+ * the schedule scrolls over it. It sits on its own layer under the content and
+ * over the body's washes, and Classic leaves it `none`.
+ *
+ * This replaced four decorative dots pinned to the viewport corners — at three
+ * corners out of four they sat behind a card, so most of that flourish was
+ * never visible at all.
+ *
+ * The tiles are inline SVG data URIs (the CSP allows `img-src data:`), so a
+ * skin costs no extra request and nothing to cache-bust on deploy.
+ */
 body::before {
   content: '';
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: 0.55;
-  background:
-    radial-gradient(circle at 7% 7%, var(--season-c) 0 2px, transparent 3px),
-    radial-gradient(circle at 93% 13%, var(--season-a) 0 2px, transparent 3px),
-    radial-gradient(circle at 4% 80%, var(--season-b) 0 1px, transparent 2px),
-    radial-gradient(circle at 96% 72%, var(--season-c) 0 1px, transparent 2px);
+  opacity: var(--season-motif-strength);
+  background-image: var(--season-motif);
+  background-repeat: repeat;
+  background-size: var(--season-tile) var(--season-tile);
+}
+
+/**
+ * The wallpaper gets quieter as the screen gets bigger.
+ *
+ * The tile is discreet on a phone, where cards cover most of the width and only
+ * the gutters show it. The same tile on a desktop puts five times as many
+ * motifs on screen against far more bare canvas — and the section headings sit
+ * directly on that canvas with no card behind them, so the pattern was drawing
+ * through "Morning Brief" and "Next up".
+ *
+ * Only the strength moves. Growing the tile instead was tried and is worse: it
+ * thins the motifs out but draws each one larger, which is more conspicuous on
+ * a tablet, not less — and it breaks the one thing holding the four seasons
+ * together, which is that they are all drawn at the same size by the same hand.
+ */
+@media (min-width: 48rem) {
+  :root { --season-motif-strength: 0.22; }
+}
+
+@media (min-width: 74rem) {
+  :root { --season-motif-strength: 0.16; }
 }
 
 h1, h2, h3, .topbar__title, .brief__greeting, .tile__label,
@@ -985,7 +1074,7 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
   height: 4.5rem;
   min-height: 4.5rem;
   margin-top: -1.7rem;
-  color: #fffaf2;
+  color: var(--ivory);
   background: linear-gradient(145deg, var(--gold-bright), var(--gold));
   border: 1px solid rgba(255,255,255,0.5);
   border-radius: 999px;
@@ -1008,6 +1097,20 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 }
 
 .tabbar__item--primary:active { transform: scale(0.96); }
+
+/**
+ * The Add button keeps its ink when it IS the current page.
+ *
+ * `.tabbar__item[aria-current='page']` sets the active tab gold, and an
+ * attribute selector outranks the plain `.tabbar__item--primary` class — so on
+ * `/add` the one filled gold button painted its label and icon gold on gold and
+ * effectively vanished. It is the most-pressed control in the app, invisible on
+ * exactly the screen it takes you to.
+ */
+.tabbar__item--primary[aria-current='page'] { color: var(--ivory); }
+/* The dot under a tab marks the current one; on the filled button the fill
+   already says that, and a dark dot on gold just reads as a smudge. */
+.tabbar__item--primary[aria-current='page']::after { display: none; }
 
 /* Home */
 .brief {
@@ -1075,7 +1178,9 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
   overflow: hidden;
 }
 .tile__art img { object-fit: contain; border-radius: inherit; }
-.tile__art--shia-original { border-radius: 999px; box-shadow: 0 8px 22px rgba(76, 59, 42, .12); }
+/* The Shia Baby tile no longer takes a special class — it draws from the same
+   manifest as the other twelve. The circular crop and drop shadow here existed
+   to tidy an opaque square; the artwork is transparent now and needs neither. */
 .tile__label {
   max-width: 7.3rem;
   color: var(--ivory);
@@ -1119,23 +1224,39 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 .entry__time strong { color: var(--ivory); }
 .entry__title { display: block; font-size: clamp(1.15rem, 4.5vw, 1.55rem); line-height: 1.1; }
 .entry__sub { display: block; margin-top: .2rem; }
-.entry__sub--alert { color: var(--alert); }
+.entry__sub--alert {
+  color: var(--alert);
+  /* The engine's explanation restates the event's title, time and date — all of
+     which are already in this row. Two lines is enough to say which kind of
+     clash it is; the full sentence stays in the row's tooltip and on the event
+     screen. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .entry__eyebrow {
   display: block;
   margin-bottom: .2rem;
-  color: #6b78a4;
+  color: #8a7a63;
   font-family: var(--font);
   font-size: .68rem;
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
-.entry__meta { display: flex; align-items: center; gap: .4rem; justify-content: flex-end; flex-wrap: wrap; }
+.entry__meta {
+  display: flex; align-items: center; gap: .4rem; justify-content: flex-end; flex-wrap: wrap;
+  min-width: 0;
+}
 .entry__chevron { color: #8a8177; font-size: 1.8rem; line-height: 1; }
 .entry__art-slot { display: grid; place-items: center; width: 3.7rem; height: 3.7rem; }
 .entry__art { width: 3.7rem; max-width: 3.7rem; height: 3.7rem; border-radius: 16px; overflow: hidden; }
 .entry__art .tile__art { width: 3.7rem; height: 3.7rem; max-width: none; }
-.schedule-entry, .miniapp-entry { grid-template-columns: 3.8rem 4.1rem minmax(0, 1fr) auto; }
+.schedule-entry, .miniapp-entry {
+  grid-template-columns: 3.8rem 4.1rem minmax(0, 1fr) minmax(0, var(--entry-meta-w));
+}
 .entry--next { border-color: rgba(197,155,103,.42); background: linear-gradient(120deg, rgba(245,229,207,.62), rgba(255,253,249,.96) 48%); }
 
 /* Controls */
@@ -1149,8 +1270,20 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 }
 .btn:hover:not(:disabled) { background: rgba(255, 253, 249, .98); box-shadow: var(--lift); }
 .btn:active:not(:disabled) { transform: scale(.98); }
+/**
+ * Ink on gold, not white on gold.
+ *
+ * The label is ~15px at weight 580 — normal text, so WCAG asks 4.5:1. Near-white
+ * on the champagne gold gave 2.45, which is the single worst contrast in the
+ * app and sits on its most-pressed control. Dark ink on the same gold gives
+ * 6.46 without touching the brand colour; the alternative was darkening gold to
+ * a bronze until white cleared 4.5, which loses the champagne entirely.
+ *
+ * This is also what the original design did before the warm editorial layer
+ * flipped it — section 6 still says `color: var(--midnight)`.
+ */
 .btn--primary {
-  color: #fffaf3;
+  color: var(--ivory);
   background: linear-gradient(145deg, var(--gold-bright), var(--gold));
   border-color: rgba(137, 96, 53, .14);
   box-shadow: 0 10px 26px rgba(137, 96, 53, .18);
@@ -1221,19 +1354,20 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 .schedule-mode--active { color: #7d5e36; background: #f2e4d2; }
 .schedule-week {
   display: grid;
-  grid-template-columns: repeat(7, minmax(3.2rem, 1fr));
+  /* `minmax(3.2rem, …)` puts the week over 390px wide, so Sunday sat off the
+     edge behind a scrollbar. The days share whatever width there is instead. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: .15rem;
   padding: .55rem;
   margin-bottom: .9rem;
-  overflow-x: auto;
   background: rgba(255,253,249,.82);
   border: 1px solid rgba(121,96,70,.10);
   border-radius: 21px;
   box-shadow: var(--lift);
 }
 .schedule-day {
-  min-width: 3.15rem;
-  padding: .55rem .3rem;
+  min-width: 0;
+  padding: .55rem .2rem;
   color: #5f5850;
   text-decoration: none;
   text-align: center;
@@ -1241,26 +1375,50 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 }
 .schedule-day--selected { color: #654a2f; background: #f3e6d6; }
 .schedule-day__weekday, .schedule-day__date { display: block; }
-.schedule-day__weekday { font-size: .68rem; font-weight: 700; text-transform: uppercase; }
-.schedule-day__date { margin-top: .15rem; font-size: .72rem; white-space: nowrap; }
+.schedule-day__weekday {
+  font-size: clamp(.6rem, 2.4vw, .68rem); font-weight: 700; text-transform: uppercase;
+}
+.schedule-day__date {
+  margin-top: .15rem; font-size: clamp(.63rem, 2.5vw, .72rem);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
 .schedule-filters { display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; }
 .schedule-filter { min-width: 8.5rem; flex: 1 1 9rem; }
 .schedule-filters .select, .schedule-filters .input { background: rgba(255,253,249,.72); }
-.schedule-add { margin-inline-start: auto; text-decoration: underline; text-underline-offset: 3px; }
+.schedule-add { margin-inline-start: auto; font-weight: 650; }
 
 /* Compose / Add */
 .compose-kicker { margin: .2rem 0 .9rem .2rem; }
 .compose-form { display: grid; gap: 1.15rem; }
-.compose-form-card { padding: 1.25rem; }
+/* A grid item's automatic minimum size is its max-content width, so the
+   horizontally scrolling mini-app picker inside this card used to push the
+   whole page to 785px on a 390px phone. The overflow has to be allowed to
+   scroll rather than to grow, and that takes an explicit zero minimum on every
+   box between the picker and the grid. */
+.compose-form > * { min-width: 0; }
+.compose-form-card { padding: 1.25rem; min-width: 0; }
 .compose-form-card .field { padding-bottom: .9rem; margin-bottom: .85rem; border-bottom: 1px solid #eadfd3; }
 .compose-form-card .field:last-child { border-bottom: 0; }
 .compose-people { margin: .3rem 0 1rem; padding: 1rem 0 .25rem; border-top: 1px solid #eadfd3; border-bottom: 1px solid #eadfd3; }
+/* The responsible picker follows the chips; without this it butts against them. */
+.compose-people .field { margin-top: 1rem; }
 .compose-subtitle { margin-bottom: .65rem; font-size: 1.25rem; }
 .compose-people__list { display: flex; gap: .5rem; flex-wrap: wrap; }
-.compose-person { display: flex; align-items: center; gap: .45rem; min-height: 2.6rem; padding: .4rem .75rem; background: #f6efe6; border-radius: 999px; }
-.compose-picker-section { overflow: hidden; }
+.compose-person { display: flex; align-items: center; gap: .5rem; min-height: var(--touch); padding: .4rem .85rem; background: #f6efe6; border-radius: 999px; cursor: pointer; }
+/* A 13px browser-default checkbox inside a 44px pill is a target people miss
+   even though the label around it is tappable. */
+.compose-person input[type='checkbox'] { width: 1.15rem; height: 1.15rem; accent-color: var(--gold); }
+.compose-person:has(input:checked) { background: #f5e6d2; box-shadow: inset 0 0 0 1px rgba(197,155,103,.45); }
+.compose-picker-section { min-width: 0; overflow: hidden; }
 .compose-picker-section .page-kicker { margin-bottom: .65rem; }
-.compose-miniapps { display: flex; gap: .65rem; overflow-x: auto; padding: .15rem .1rem .5rem; scroll-snap-type: x proximity; }
+.compose-miniapps {
+  display: flex; gap: .65rem; overflow-x: auto;
+  padding: .35rem .1rem .5rem;
+  scroll-snap-type: x proximity;
+  /* The row scrolls; a scrollbar that only appears on hover is not a hint, so
+     the last tile is deliberately allowed to peek past the edge. */
+  scrollbar-width: thin;
+}
 .compose-miniapp {
   flex: 0 0 7rem;
   min-height: 7.5rem;
@@ -1277,7 +1435,13 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
   scroll-snap-align: start;
   box-shadow: 0 5px 16px rgba(92,67,43,.05);
 }
-.compose-miniapp--selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(197,155,103,.10), var(--lift); }
+/* Selected is a filled tile with a ring, not a border tint — at a glance across
+   a scrolling row a 1px colour change is not a selection state. */
+.compose-miniapp--selected {
+  border-color: var(--gold);
+  background: #fbf1e3;
+  box-shadow: 0 0 0 2px rgba(197,155,103,.28), var(--lift);
+}
 .compose-miniapp__art { width: 3.6rem; height: 3.6rem; }
 .compose-miniapp__image, .compose-miniapp__image .tile__art { width: 3.6rem; height: 3.6rem; }
 .compose-miniapp__label { font-family: var(--font-display); font-size: .92rem; }
@@ -1296,7 +1460,7 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 .assistant-submit { min-height: 3.4rem; font-family: var(--font-display); font-size: 1.2rem; }
 .assistant-status-row { display: flex; gap: .4rem; flex-wrap: wrap; margin: .7rem 0; }
 .assistant-applied-row { display: grid; grid-template-columns: 3.5rem 1fr; gap: .9rem; align-items: start; }
-.assistant-check { width: 3.2rem; height: 3.2rem; display: grid; place-items: center; color: white; background: linear-gradient(145deg, var(--gold-bright), var(--gold)); border-radius: 999px; }
+.assistant-check { width: 3.2rem; height: 3.2rem; display: grid; place-items: center; color: var(--ivory); background: linear-gradient(145deg, var(--gold-bright), var(--gold)); border-radius: 999px; }
 .assistant-action-title { margin: 0 0 .35rem; font-size: 1.4rem; }
 .assistant-working { display: flex; align-items: center; gap: .7rem; }
 .assistant-sparkles { color: var(--gold); font-size: 1.4rem; animation: assistant-pulse 1.2s var(--ease) infinite alternate; }
@@ -1308,27 +1472,80 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 .shopping-add { padding: 1.35rem; }
 .shopping-add .card__title { font-size: clamp(1.8rem, 7vw, 2.35rem); }
 .shopping-add__form .btn { min-height: 3.4rem; font-family: var(--font-display); font-size: 1.2rem; }
-.shopping-list { display: grid; gap: .85rem; }
+
+/* Aisle headings. Small and quiet — they organise the list, they are not
+   competing with the things on it. */
+.shopping-aisle + .shopping-aisle { margin-top: 1.4rem; }
+.shopping-aisle__title {
+  margin: 0 0 .55rem .35rem;
+  color: #655d55;
+  font-family: var(--font);
+  font-size: .74rem;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.shopping-aisle--done { opacity: .7; }
+
+.shopping-list { display: grid; gap: .6rem; }
 .shopping-item {
   display: grid;
-  grid-template-columns: 4.1rem minmax(0,1fr) auto;
-  gap: .95rem;
+  grid-template-columns: 3.2rem minmax(0,1fr) auto;
+  gap: .85rem;
   align-items: center;
-  min-height: 8rem;
-  padding: 1rem 1.1rem;
+  /* Was 8rem tall with a 2rem serif name — a poster per banana. A list you tick
+     your way down wants to show a whole aisle at once. */
+  min-height: 4.4rem;
+  padding: .7rem .9rem;
   background: rgba(255,253,249,.90);
   border: 1px solid rgba(121,96,70,.10);
   border-radius: 24px;
   box-shadow: var(--lift);
   transition: transform var(--slow) var(--ease), opacity var(--slow) var(--ease);
 }
-.shopping-item__art { width: 4rem; height: 4rem; display: grid; place-items: center; color: #8a6a44; background: #f7eee1; border-radius: 18px; }
-.shopping-item__name { margin: 0; font-size: clamp(1.45rem, 6vw, 2rem); line-height: 1; }
-.shopping-item__qty { margin: .55rem 0 0; color: #756d64; }
+.shopping-item__art { width: 3.1rem; height: 3.1rem; display: grid; place-items: center; color: #8a6a44; background: #f7eee1; border-radius: 14px; }
+.shopping-item__name { margin: 0; font-size: clamp(1.1rem, 4.4vw, 1.35rem); line-height: 1.15; }
+.shopping-item__qty { margin: .1rem 0 0; color: #756d64; font-size: .85rem; font-variant-numeric: tabular-nums; }
 .shopping-item__store { margin: .1rem 0 0; color: #978e84; font-size: .75rem; }
 .shopping-item__state { align-self: center; }
-.shopping-item__buy { min-width: 5rem; min-height: 2.75rem; justify-content: center; border: 0; cursor: pointer; }
+.shopping-item__buy {
+  min-width: 5.2rem; min-height: var(--touch); padding-inline: var(--s3); justify-content: center;
+  color: #85602f; border-color: rgba(197, 155, 103, .45); background: rgba(255, 253, 249, .9);
+}
+.shopping-item__buy:hover:not(:disabled) { color: #6d4d24; background: #f8efe1; }
 .shopping-item--bought { opacity: .78; }
+.shopping-item--bought .shopping-item__name { text-decoration: line-through; text-decoration-color: rgba(117,109,100,.5); }
+.shopping-item--bought .shopping-item__art { color: var(--good); background: var(--good-dim); }
+
+/* A segmented control. Four sections that fit the width they are given rather
+   than a row of pills whose last item hangs off the edge of a phone. */
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: .2rem;
+  padding: .25rem;
+  margin-bottom: 1.2rem;
+  background: rgba(255, 253, 249, .72);
+  border: 1px solid rgba(121, 96, 70, .12);
+  border-radius: 999px;
+  box-shadow: 0 5px 16px rgba(92, 67, 43, .05);
+}
+.segmented__item {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 2.7rem;
+  padding: .3rem .4rem;
+  color: #776e64;
+  font-size: clamp(.74rem, 3vw, .86rem);
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  border-radius: 999px;
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.segmented__item:hover { color: var(--ivory); background: rgba(242, 228, 210, .55); }
+/* Not colour alone: the selected tab is also the only filled one. */
+.segmented__item--active { color: #7d5e36; background: #f2e4d2; font-weight: 700; }
 
 /* Shia Baby */
 .business-hero {
@@ -1341,7 +1558,22 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 }
 .business-hero__head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .business-hero__title { margin: 0; font-size: clamp(2rem, 8vw, 2.8rem); }
-.business-bear { width: 5.2rem; height: 5.2rem; object-fit: cover; border-radius: 999px; box-shadow: 0 8px 22px rgba(76,59,42,.11); }
+/**
+ * The hero bear.
+ *
+ * `cover` cropped the artwork's edges and the shadow drew a disc behind it —
+ * both were tuned for an opaque square. The bear is transparent now, so it sits
+ * whole (`contain`) on a soft cream disc that keeps the round treatment without
+ * a shadow hanging off nothing.
+ */
+.business-bear {
+  width: 5.6rem; height: 5.6rem;
+  padding: .3rem;
+  object-fit: contain;
+  background: radial-gradient(circle at 50% 45%, #fdf7ee, #f4ece0);
+  border: 1px solid rgba(121, 96, 70, .10);
+  border-radius: 999px;
+}
 .business-metrics { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); margin-top: 1.2rem; }
 .business-metric { min-width: 0; padding: .5rem .25rem; text-align: center; }
 .business-metric + .business-metric { border-inline-start: 1px solid #eadfd3; }
@@ -1375,6 +1607,27 @@ body[data-miniapp='shia-baby'] .topbar__title { color: #1c2e54; }
 body[data-miniapp='hubby-work'] .topbar__title { max-width: 11ch; }
 body[data-miniapp='hubby-work'] .entry__eyebrow { color: #596b89; }
 
+/* Household — the invitation code, which has to be readable and copyable. */
+.invite-card { border-color: rgba(197, 155, 103, .32); }
+.invite-code {
+  margin-top: .9rem;
+  padding: .9rem 1rem;
+  background: #f8efe1;
+  border: 1px solid rgba(197, 155, 103, .32);
+  border-radius: 16px;
+}
+.invite-code__value {
+  margin: 0 0 .5rem;
+  /* A token read character by character needs a face that tells 0 from O. */
+  font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: .82rem;
+  line-height: 1.5;
+  color: #4a4038;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.invite-code .btn { margin-top: .75rem; }
+
 /* Settings */
 .settings-card, .appearance-card { margin-bottom: 1rem; }
 .settings-link { grid-template-columns: 1fr auto; min-height: 3.8rem; box-shadow: none; border-radius: 16px; }
@@ -1385,6 +1638,12 @@ body[data-miniapp='hubby-work'] .entry__eyebrow { color: #596b89; }
 .card, .entry, .shopping-item, .business-list-row, .business-warning, .business-shift-row { animation: editorial-card-in 260ms var(--ease) both; }
 @keyframes editorial-view-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes editorial-card-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* The home screen's two reading columns. One column on a phone; side by side
+   once there is width for two, so the brief and the schedule are both above the
+   fold instead of the schedule living under 900px-wide two-line cards. */
+.home__columns { display: grid; gap: 0 var(--s5); }
+.home__column > .section:last-child { margin-bottom: 0; }
 
 /* Tablet and desktop keep the light editorial system while preserving the
    existing rail/sidebar responsive architecture. */
@@ -1398,21 +1657,35 @@ body[data-miniapp='hubby-work'] .entry__eyebrow { color: #596b89; }
   .sidenav__item[aria-current='page'] { color: #7c5b31; background: #f2e4d2; }
   .shell__body { padding: var(--s5) var(--s5) var(--s7); }
   .topbar { padding-inline: var(--s5); }
+  /* §3 asks for a 4–5 column icon grid on a tablet, across the width it has —
+     a 3-wide grid capped at 34rem left half an iPad empty beside it. */
   .home-grid { grid-template-columns: repeat(5, 1fr); }
   .business-hero { padding: 1.8rem; }
+}
+
+@media (min-width: 62rem) {
+  /* The brief is the wider of the two: its cards carry sentences, the schedule
+     carries rows. */
+  .home__columns { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+  /* The greeting no longer needs the phone's 11ch wrap once it has a column. */
+  .brief__greeting { max-width: 18ch; }
 }
 
 @media (min-width: 74rem) {
   .sidenav { background: rgba(255,253,249,.93); }
   .topbar { padding-inline: var(--s6); }
-  .home-grid { grid-template-columns: repeat(6, 1fr); }
+  .home-grid { grid-template-columns: repeat(9, 1fr); }
   .shell__body { padding: var(--s6) var(--s6) var(--s8); }
+  /* A card holding two lines does not need 900px. Keeping the measure sane is
+     the difference between a dashboard and a stretched phone screen. */
+  .home__column .card p, .home__column .entry__main { max-width: 62ch; }
 }
 
 @media (max-width: 30rem) {
+  :root { --entry-meta-w: 7.6rem; }
   .schedule-toolbar__head { align-items: flex-start; flex-direction: column; }
   .schedule-mode-tabs { width: 100%; }
-  .schedule-entry, .miniapp-entry { grid-template-columns: 3.5rem minmax(0,1fr) auto; }
+  .schedule-entry, .miniapp-entry { grid-template-columns: 3.5rem minmax(0,1fr) minmax(0, var(--entry-meta-w)); }
   .schedule-entry > .entry__time, .miniapp-entry > .entry__time { display: none; }
   .shopping-item { grid-template-columns: 3.5rem minmax(0,1fr) auto; gap: .7rem; }
   .shopping-item__art { width: 3.4rem; height: 3.4rem; }
@@ -1421,6 +1694,18 @@ body[data-miniapp='hubby-work'] .entry__eyebrow { color: #596b89; }
   .business-metric:nth-child(4) { border-top: 1px solid #eadfd3; padding-top: .75rem; }
   .assistant-intro__body { grid-template-columns: 4.3rem 1fr; }
   .assistant-orb { width: 4.1rem; height: 4.1rem; }
+}
+
+/* 320px. There is no width here for a title column AND a chip-and-avatars
+   column side by side — squeezing them together is what wrapped titles three
+   deep. The trailing cluster drops onto its own line under the title instead,
+   and the chevron goes: the whole row is the button, so it was decoration
+   competing for the scarcest space on the smallest screen. */
+@media (max-width: 22.5rem) {
+  .entry, .schedule-entry, .miniapp-entry { grid-template-columns: 3.2rem minmax(0, 1fr); }
+  .entry__meta { grid-column: 2; justify-content: flex-start; margin-top: .15rem; }
+  .entry__chevron { display: none; }
+  .schedule-filters .schedule-add { width: 100%; margin-inline-start: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

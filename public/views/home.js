@@ -13,7 +13,7 @@ import { state } from '../lib/state.js';
 import { card, chip, empty, icon, ICONS, section, whoRow, withStates } from '../lib/ui.js';
 import { MINI_APPS } from '../lib/miniapps.js';
 import { miniAppArt } from '../lib/art.js';
-import { dayLong, relativeDay, time, timeRange } from '../lib/format.js';
+import { dayLong, humaniseDates, relativeDay, statusLabel, time, timeRange } from '../lib/format.js';
 
 export async function render(mount, _params, { navigate }) {
   const householdId = state.household.id;
@@ -30,11 +30,17 @@ export async function render(mount, _params, { navigate }) {
       ]);
       return { brief: brief?.brief ?? null, upcoming, conflicts, notifications, now };
     },
-    (data) => h('div', {},
+    // The greeting and the launcher run full width; the two reading columns
+    // below them sit side by side from tablet up and stack on a phone. On a
+    // desktop the brief and the schedule were previously one narrow column of
+    // 900px-wide cards holding two lines each, with everything below the fold.
+    (data) => h('div', { class: 'home' },
       summary(data, navigate),
       grid(),
-      morningBrief(data.brief, navigate),
-      nextUp(data, navigate),
+      h('div', { class: 'home__columns' },
+        h('div', { class: 'home__column' }, morningBrief(data.brief, navigate)),
+        h('div', { class: 'home__column' }, nextUp(data, navigate)),
+      ),
     ));
 }
 
@@ -81,10 +87,12 @@ function morningBrief(brief, navigate) {
       ...errands.slice(0, 3).map((item) => h('p', {}, item.title)),
       h('a', { class: 'btn btn--quiet', href: '/errands' }, 'Open errands')) : null,
     staffing.length ? card('Shia Baby coverage', `${staffing.length} warning${staffing.length === 1 ? '' : 's'}`,
-      ...staffing.slice(0, 4).map((message) => h('p', {}, chip('Warning', 'warn'), ` ${message}`)),
+      ...staffing.slice(0, 4).map((message) => h('p', {}, chip('Warning', 'warn'), ` ${humaniseDates(message)}`)),
       h('a', { class: 'btn btn--quiet', href: '/business/staffing' }, 'Open staffing')) : null,
     conflicts.length ? card('Conflicts to resolve', `${conflicts.length}`,
-      ...conflicts.slice(0, 3).map((conflict) => h('p', {}, chip(conflict.severity ?? 'warning', conflict.severity === 'blocking' ? 'alert' : 'warn'), ` ${conflict.explanation}`)),
+      ...conflicts.slice(0, 3).map((conflict) => h('p', { class: 'brief-conflict' },
+        chip(statusLabel(conflict.severity, 'Heads up'), conflict.severity === 'blocking' ? 'alert' : 'warn'),
+        ` ${conflict.explanation}`)),
       h('a', { class: 'btn btn--quiet', href: '/schedule' }, 'See schedule')) : null,
   );
 }
