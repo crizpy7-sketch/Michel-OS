@@ -31,6 +31,7 @@ const ROUTES = [
   ['/add',                  () => import('./views/compose.js'),   'Add'],
   ['/assistant',            () => import('./views/assistant.js'), 'Assistant'],
   ['/more',                 () => import('./views/more.js'),      'More'],
+  ['/design',               () => import('./views/design.js'),    'Appearance'],
   ['/search',               () => import('./views/search.js'),    'Search'],
   ['/inbox',                () => import('./views/inbox.js'),     'Inbox'],
   ['/shopping',             () => import('./views/lists.js'),     'Shopping'],

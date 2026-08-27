@@ -1,16 +1,10 @@
 import { h } from '../lib/dom.js';
 import { api } from '../lib/api.js';
 import { reset, state } from '../lib/state.js';
-import { card, select, toast } from '../lib/ui.js';
-import { APPEARANCE_OPTIONS, getAppearancePreference, setAppearancePreference } from '../lib/theme.js';
+import { card } from '../lib/ui.js';
+import { getAppearancePreference } from '../lib/theme.js';
 
 export async function render(mount) {
-  const appearance = select(APPEARANCE_OPTIONS, { value: getAppearancePreference(), 'aria-label': 'Seasonal appearance' });
-  appearance.addEventListener('change', () => {
-    setAppearancePreference(appearance.value);
-    toast(appearance.value === 'auto' ? 'Seasonal appearance set to automatic' : 'Appearance updated');
-  });
-
   const account = card(state.member?.displayName ?? 'Account', state.member?.role ?? null,
     link('/household', 'Household & family'),
     link('/notifications', 'Notifications'),
@@ -22,9 +16,10 @@ export async function render(mount) {
   );
   account.classList.add('settings-card');
 
-  const appearanceCard = card('Appearance', 'visual only',
-    h('p', { class: 'muted' }, 'Seasonal skins change atmosphere, accents and motion only. Your schedule, Assistant, permissions and Shia Baby engine stay exactly the same.'),
-    h('label', { class: 'field' }, h('span', { class: 'field__label' }, 'Seasonal appearance'), appearance),
+  // The picker itself lives at /design, where each skin can be previewed
+  // before it is chosen. A dropdown of names you cannot see is a guess.
+  const appearanceCard = card('Appearance', getAppearancePreference(),
+    link('/design', 'Seasonal appearance'),
   );
   appearanceCard.classList.add('appearance-card');
 

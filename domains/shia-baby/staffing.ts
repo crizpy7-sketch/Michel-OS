@@ -582,7 +582,7 @@ export function analyzeSchedule(input: AnalyzeScheduleInput): ScheduleAnalysis {
         severity: 'blocking',
         employeeIds: [],
         shiftIds: dayShifts.map((s) => s.shift.id).sort(),
-        message: `Nobody is scheduled to open on ${date}.`,
+        message: `Nobody is scheduled to open on ${formatCalendarDate(date)}.`,
       });
     }
     if (!hasCloser) {
@@ -592,7 +592,7 @@ export function analyzeSchedule(input: AnalyzeScheduleInput): ScheduleAnalysis {
         severity: 'blocking',
         employeeIds: [],
         shiftIds: dayShifts.map((s) => s.shift.id).sort(),
-        message: `Nobody is scheduled to close on ${date}.`,
+        message: `Nobody is scheduled to close on ${formatCalendarDate(date)}.`,
       });
     }
 
@@ -604,7 +604,7 @@ export function analyzeSchedule(input: AnalyzeScheduleInput): ScheduleAnalysis {
         employeeIds: [],
         shiftIds: dayShifts.map((s) => s.shift.id).sort(),
         message:
-          `On ${date} the shop drops to ${thin.onFloor} on the floor ` +
+          `On ${formatCalendarDate(date)} the shop drops to ${thin.onFloor} on the floor ` +
           `around ${formatMinute(thin.atMinute)}, below the minimum of ${rule.minimumOnFloor}.`,
       });
     }
@@ -680,6 +680,31 @@ function compareWarnings(a: StaffingWarning, b: StaffingWarning): number {
 
 function round1(value: number): number {
   return Math.round(value * 10) / 10;
+}
+
+/**
+ * A calendar date as a person would say it: "Thursday 27 August".
+ *
+ * These strings are read by a shop owner on a phone, not by a machine, and
+ * "Nobody is scheduled to close on 2026-08-27" makes them do date arithmetic
+ * to understand a staffing gap. Built from fixed tables rather than
+ * toLocaleDateString so the output stays deterministic and does not shift with
+ * the host's locale -- the same requirement that already applies to every other
+ * string this module produces.
+ */
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+] as const;
+
+export function formatCalendarDate(date: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  if (!y || !m || !d) return date;                 // never worse than the input
+  const at = new Date(Date.UTC(y, m - 1, d));
+  const weekday = WEEKDAY_NAMES[at.getUTCDay()] ?? '';
+  const month = MONTH_NAMES[m - 1] ?? '';
+  return weekday && month ? `${weekday} ${d} ${month}` : date;
 }
 
 function formatMinute(minuteOfDay: number): string {

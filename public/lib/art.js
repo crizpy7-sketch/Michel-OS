@@ -45,24 +45,17 @@ function fallbackArt(app) {
  * not arrived yet — which is exactly what it is.
  */
 export async function miniAppArt(app, { size = 88, eager = false } = {}) {
-  // Shia Baby is a protected brand asset. Use an exact crop from the approved
-  // original source rather than the older concept-board extraction.
-  if (app.key === 'shia-baby') {
-    return h('div', { class: 'tile__art tile__art--shia-original', title: 'Shia Baby original bear artwork' },
-      h('img', {
-        src: '/brand/shia-baby-bear.png', width: size, height: size, alt: '',
-        loading: eager ? 'eager' : 'lazy', decoding: 'async',
-      }),
-    );
-  }
-  if (app.key === 'shopping') {
-    return h('div', { class: 'tile__art tile__art--shopping-approved', title: 'Shopping approved artwork' },
-      h('img', {
-        src: '/brand/shopping-approved.png', width: size, height: size, alt: '',
-        loading: eager ? 'eager' : 'lazy', decoding: 'async',
-      }),
-    );
-  }
+  // No per-app special cases here.
+  //
+  // Shia Baby and Shopping used to be hardcoded to files under /brand/,
+  // bypassing the icon manifest. Three things went wrong with that: approved
+  // replacement artwork could not take effect (the override won), the tiles
+  // shipped the full-size source (532 KB and 125 KB) instead of the ~4 KB
+  // derived WebP the pipeline exists to produce, and ASSET_MAP.md's promise
+  // that swapping an icon is a one-record change quietly stopped being true.
+  //
+  // Every mini-app now resolves through the manifest. To change one icon,
+  // replace public/icons/<key>.png and run `npm run icons`.
 
   const records = await manifest();
   const record = records.get(app.key);
