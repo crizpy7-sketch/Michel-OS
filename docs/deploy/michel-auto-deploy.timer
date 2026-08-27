@@ -1,0 +1,13 @@
+[Unit]
+Description=Check origin/main for Michel OS updates every 3 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=3min
+# Spread the load so this never lines up exactly with other timers on a shared box.
+RandomizedDelaySec=30
+AccuracySec=15s
+Unit=michel-auto-deploy.service
+
+[Install]
+WantedBy=timers.target

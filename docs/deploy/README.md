@@ -34,6 +34,54 @@ curl -fsS http://127.0.0.1:${MICHEL_BIND_PORT:-3100}/api/ready
 
 Then add only the Michel hostname to the VPS's existing HTTPS reverse proxy. See `Caddyfile.shared-vps.example` for Caddy syntax and `SHARED_VPS_MARKETSWARM.md` for the required MarketSwarm preflight and non-regression checks.
 
+## Automatic deployment
+
+Once installed, anything pushed to `main` that passes CI goes live within a few
+minutes. No manual step, and no credentials leave the VPS.
+
+```sh
+sudo sh /opt/michel-os/docs/deploy/install-auto-deploy.sh
+```
+
+That installs a systemd timer which every 3 minutes:
+
+1. checks `origin/main` for a new commit — exits silently when there is none;
+2. **refuses to deploy unless that commit's `gauntlet` workflow passed**;
+3. backs up the database, and aborts if the backup is not a real dump;
+4. checks out the commit, rebuilds, and restarts;
+5. polls `/api/ready` for 60 seconds, and **rolls back to the previous commit**
+   if the new build never comes up healthy.
+
+```sh
+journalctl -u michel-auto-deploy -f                    # watch it work
+sh /opt/michel-os/docs/deploy/auto-deploy.sh --force   # deploy right now
+systemctl disable --now michel-auto-deploy.timer       # stop auto-deploying
+```
+
+### Why pull-based rather than a GitHub Action that SSHes in
+
+A push-based deploy needs an SSH private key in GitHub secrets and an inbound
+path from GitHub's runners to this host. On a VPS that also runs somebody else's
+production service, that is a lot of new attack surface bought for a few seconds
+of latency. Here nothing leaves the VPS and nothing needs to reach it, so a
+leaked repository secret cannot touch the host.
+
+### The CI gate is the point
+
+`MICHEL_REQUIRE_CI=true` is the default and should stay that way. Without it,
+"push to main" also means "any broken commit takes the family calendar down,
+automatically, at 3am". For a private repository set `GITHUB_TOKEN` in `.env` so
+the deploy can read commit status; without one it skips rather than guesses.
+
+### Safety properties
+
+- **Refuses to run on a dirty working tree** — local edits on the box are never
+  silently destroyed by a checkout.
+- **Backs up before every deploy**, and treats a suspiciously small dump as a
+  failure rather than keeping a useless file.
+- **Rolls back automatically** on a failed build or a failed health check.
+- **Never touches anything outside its own compose project.**
+
 ## Standalone first deployment
 
 Prerequisites on the VPS: Git, Docker Engine, and Docker Compose v2. Point a DNS A/AAAA record for your chosen hostname at the VPS before starting Caddy.
