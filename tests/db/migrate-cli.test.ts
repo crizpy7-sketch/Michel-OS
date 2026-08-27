@@ -45,7 +45,7 @@ test('a first run applies the schema and reports what it did', async () => {
   const { connect } = pgliteConnector();
   const outcome = await runMigrateCli({ databaseUrl: 'pglite://test', connect });
   assert.equal(outcome.code, 0, outcome.message);
-  assert.deepEqual(outcome.applied, ['001_initial.sql']);
+  assert.deepEqual(outcome.applied, ['001_initial.sql', '002_removals.sql']);
   assert.match(outcome.message, /applied 001_initial\.sql/);
 });
 

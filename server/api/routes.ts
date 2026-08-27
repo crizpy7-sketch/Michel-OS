@@ -327,6 +327,54 @@ export function buildApiRouter(env: AppEnv): Router {
       return created(invitation);
     }));
 
+  /**
+   * The invitations still outstanding.
+   *
+   * `member.manage`, the same permission it takes to mint one: who has been
+   * offered a way into the household is household administration, not a
+   * roster everybody reads. Tokens are not returned and cannot be — only the
+   * hash is stored — so this lists who was invited, never how to accept.
+   */
+  r.get('/api/households/:householdId/invitations',
+    guard(env, { permission: 'member.manage' }, async (ctx) =>
+      ok({
+        invitations: await repo.listInvitations(ctx.env.db, ctx.actor.household.id, {
+          pending: true, now: ctx.now,
+        }),
+      })));
+
+  /**
+   * Revoke an invitation that has not been accepted.
+   *
+   * A hard delete, because the row is the credential: as long as it exists the
+   * token in somebody's inbox still works. An invitation that was already
+   * accepted is refused rather than deleted — it is now the record of how a
+   * member got here, and the way to remove that person is to remove the member.
+   */
+  r.delete('/api/households/:householdId/invitations/:invitationId',
+    guard(env, { permission: 'member.manage' }, async (ctx) => {
+      const invitationId = ctx.req.params['invitationId']!;
+      const invitation = await repo.getInvitation(ctx.env.db, ctx.actor.household.id, invitationId);
+      if (invitation === null) return problem(404, 'not_found', 'No such invitation.');
+      if (invitation.acceptedAt !== null) {
+        return problem(409, 'accepted',
+          'That invitation was already accepted. Remove the person instead.');
+      }
+
+      const revoked = await ctx.env.db.transaction(async (tx) => {
+        const done = await repo.deleteInvitation(tx, ctx.actor.household.id, invitationId);
+        if (done) {
+          await repo.writeAudit(tx, {
+            householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+            action: 'invitation.revoke', entity: 'invitation', entityId: invitationId,
+            before: { role: invitation.role, email: invitation.email },
+          });
+        }
+        return done;
+      });
+      return revoked ? noContent() : problem(404, 'not_found', 'No such invitation.');
+    }));
+
   /* ---------------------------------------------------------- household */
 
   /**
@@ -418,6 +466,53 @@ export function buildApiRouter(env: AppEnv): Router {
           ...(active === undefined ? {} : { active }),
         }));
       return ok(updated);
+    }));
+
+  /**
+   * Remove a person from the household.
+   *
+   * Deactivation, never a DELETE, and there is no "unless they have no
+   * history" escape hatch here as there is for an employee. A member id is
+   * written into audit rows, into `ai_action`, into every event they attended
+   * and every reminder assigned to them; `member` is the one table in this
+   * schema that half the others reference. Deleting the row would either
+   * cascade the family's past away or leave dangling references, and the
+   * difference between the two is a foreign key nobody re-reads before the
+   * delete. An inactive member is refused by `authorize()` on every request
+   * (`code: 'inactive'`), so this is a real removal of access.
+   *
+   * PATCH already accepts `{ active: false }` and is unchanged — this exists so
+   * that "remove this person" is a verb the API states plainly rather than a
+   * field a client has to know to send.
+   */
+  r.delete('/api/households/:householdId/members/:memberId',
+    guard(env, { permission: 'member.manage' }, async (ctx) => {
+      const memberId = ctx.req.params['memberId']!;
+      const existing = await repo.getMember(ctx.env.db, ctx.actor.household.id, memberId);
+      if (existing === null) return problem(404, 'not_found', 'No such member.');
+
+      // The same invariant the PATCH route protects, for the same reason: a
+      // household with no active owner can never be administered again.
+      if (existing.role === 'owner'
+        && (await repo.countActiveOwners(ctx.env.db, ctx.actor.household.id)) <= 1) {
+        return problem(409, 'last_owner',
+          'This is the only owner. Make someone else an owner first.');
+      }
+
+      const updated = await ctx.env.db.transaction(async (tx) => {
+        const saved = await repo.updateMember(tx, ctx.actor.household.id, memberId, { active: false });
+        if (saved !== null) {
+          await repo.writeAudit(tx, {
+            householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+            action: 'member.deactivate', entity: 'member', entityId: memberId,
+            before: { active: existing.active }, after: { active: false },
+          });
+        }
+        return saved;
+      });
+      return updated === null
+        ? problem(404, 'not_found', 'No such member.')
+        : ok({ outcome: 'deactivated', member: updated });
     }));
 
   /* ------------------------------------------------------------- events */
@@ -618,6 +713,40 @@ export function buildApiRouter(env: AppEnv): Router {
       return ok(await ctx.env.db.transaction((tx) => repo.saveShoppingItem(tx, result.value)));
     }));
 
+  /**
+   * Delete a shopping item.
+   *
+   * `event.delete.own` rather than the `event.create` its sibling PATCH uses,
+   * because deleting is not adding and the roles should not be assumed to
+   * match. A shopping item records no author, so a `.own` claim can never be
+   * proven and the kernel denies it — which leaves deletion to the roles
+   * holding `event.delete.any` (owner, adult). A teen can still cross an item
+   * off or mark it `removed`; what they cannot do is make it never have been
+   * asked for. Deny-by-default is doing exactly what it is for.
+   */
+  r.delete('/api/households/:householdId/shopping/:itemId',
+    guard(env, {
+      permission: 'event.delete.own',
+      resource: async (ctx) => {
+        const item = await repo.getShoppingItem(
+          ctx.env.db, ctx.actor.household.id, ctx.req.params['itemId']!);
+        return item === null ? null : { householdId: item.householdId };
+      },
+    }, async (ctx) => {
+      const itemId = ctx.req.params['itemId']!;
+      const done = await ctx.env.db.transaction(async (tx) => {
+        const removed = await repo.deleteShoppingItem(tx, ctx.actor.household.id, itemId);
+        if (removed) {
+          await repo.writeAudit(tx, {
+            householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+            action: 'shopping.delete', entity: 'shopping_item', entityId: itemId,
+          });
+        }
+        return removed;
+      });
+      return done ? noContent() : problem(404, 'not_found', 'No such item.');
+    }));
+
   /* ------------------------------------------------------------- errands */
 
   r.get('/api/households/:householdId/errands', guard(env, { permission: 'event.read' },
@@ -656,6 +785,32 @@ export function buildApiRouter(env: AppEnv): Router {
     if (!result.ok) return fromIssues(result.issues);
     return ok(await ctx.env.db.transaction((tx) => repo.saveErrand(tx, result.value)));
   }));
+
+  /** Delete an errand. Same reasoning as the shopping delete above. */
+  r.delete('/api/households/:householdId/errands/:errandId',
+    guard(env, {
+      permission: 'event.delete.own',
+      resource: async (ctx) => {
+        const errand = await repo.getErrand(
+          ctx.env.db, ctx.actor.household.id, ctx.req.params['errandId']!);
+        return errand === null
+          ? null
+          : { householdId: errand.householdId, ...(errand.assignedTo ? { assignedTo: errand.assignedTo } : {}) };
+      },
+    }, async (ctx) => {
+      const errandId = ctx.req.params['errandId']!;
+      const done = await ctx.env.db.transaction(async (tx) => {
+        const removed = await repo.deleteErrand(tx, ctx.actor.household.id, errandId);
+        if (removed) {
+          await repo.writeAudit(tx, {
+            householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+            action: 'errand.delete', entity: 'errand', entityId: errandId,
+          });
+        }
+        return removed;
+      });
+      return done ? noContent() : problem(404, 'not_found', 'No such errand.');
+    }));
 
   /* ----------------------------------------------------------- reminders */
 
@@ -722,6 +877,39 @@ export function buildApiRouter(env: AppEnv): Router {
     if (!result.ok) return fromIssues(result.issues);
     return ok(await ctx.env.db.transaction((tx) => repo.saveReminder(tx, result.value)));
   }));
+
+  /**
+   * Delete a reminder.
+   *
+   * Distinct from dismissing one: dismissing says "not this time" and keeps the
+   * row, deleting says "this should never have existed". A recurring reminder's
+   * successor is only created when it is COMPLETED, so deleting one cannot
+   * strand a series half-generated.
+   */
+  r.delete('/api/households/:householdId/reminders/:reminderId',
+    guard(env, {
+      permission: 'event.delete.own',
+      resource: async (ctx) => {
+        const reminder = await repo.getReminder(
+          ctx.env.db, ctx.actor.household.id, ctx.req.params['reminderId']!);
+        return reminder === null
+          ? null
+          : { householdId: reminder.householdId, ...(reminder.assignedTo ? { assignedTo: reminder.assignedTo } : {}) };
+      },
+    }, async (ctx) => {
+      const reminderId = ctx.req.params['reminderId']!;
+      const done = await ctx.env.db.transaction(async (tx) => {
+        const removed = await repo.deleteReminder(tx, ctx.actor.household.id, reminderId);
+        if (removed) {
+          await repo.writeAudit(tx, {
+            householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+            action: 'reminder.delete', entity: 'reminder', entityId: reminderId,
+          });
+        }
+        return removed;
+      });
+      return done ? noContent() : problem(404, 'not_found', 'No such reminder.');
+    }));
 
   /* --------------------------------------------------------------- inbox */
 
@@ -912,6 +1100,62 @@ export function buildApiRouter(env: AppEnv): Router {
         })));
     }));
 
+  /**
+   * Remove an employee — the complaint this whole repair started from.
+   *
+   * Two outcomes, chosen by the data rather than by a flag on the request:
+   *
+   *   - never worked a shift, never in a swap  →  the row is DELETED. A test
+   *     employee typed in to see what the screen did should be able to leave
+   *     without a trace, and nothing references them.
+   *   - has shifts or swaps  →  DEACTIVATED. `shift.employee_id` is
+   *     `on delete set null`, so deleting would leave the hours they worked
+   *     attributed to nobody: the payroll history would still be there and
+   *     would quietly stop being about a person.
+   *
+   * The client does not get to pick. A caller who could pass `?hard=true`
+   * would eventually pass it on the employee who worked all summer.
+   */
+  r.delete('/api/households/:householdId/business/employees/:employeeId',
+    guard(env, { permission: 'business.manage' }, async (ctx) => {
+      const found = await requireBusiness(ctx);
+      if (!found.ok) return found.reply;
+      const employeeId = ctx.req.params['employeeId']!;
+
+      // Scoped through the household's own business, never through an id in
+      // the URL — CR-009, the same as every other business route here.
+      const employees = await repo.listEmployees(ctx.env.db, ctx.actor.household.id, found.business.id);
+      const employee = employees.find((e) => e.id === employeeId);
+      if (employee === undefined) return problem(404, 'not_found', 'No such employee.');
+
+      const hasHistory = await repo.employeeHasHistory(
+        ctx.env.db, ctx.actor.household.id, found.business.id, employeeId);
+
+      return ctx.env.db.transaction(async (tx) => {
+        if (!hasHistory) {
+          const removed = await repo.deleteEmployee(
+            tx, ctx.actor.household.id, found.business.id, employeeId);
+          if (!removed) return problem(404, 'not_found', 'No such employee.');
+          await repo.writeAudit(tx, {
+            householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+            action: 'employee.delete', entity: 'employee', entityId: employeeId,
+            before: { displayName: employee.displayName },
+          });
+          return ok({ outcome: 'deleted', employee: null });
+        }
+
+        const deactivated = await repo.deactivateEmployee(
+          tx, ctx.actor.household.id, found.business.id, employeeId);
+        if (deactivated === null) return problem(404, 'not_found', 'No such employee.');
+        await repo.writeAudit(tx, {
+          householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+          action: 'employee.deactivate', entity: 'employee', entityId: employeeId,
+          before: { active: true }, after: { active: false, reason: 'has worked shifts' },
+        });
+        return ok({ outcome: 'deactivated', employee: deactivated });
+      });
+    }));
+
   r.post('/api/households/:householdId/business/shifts',
     guard(env, { permission: 'employee.schedule' }, async (ctx) => {
       const found = await requireBusiness(ctx);
@@ -960,6 +1204,50 @@ export function buildApiRouter(env: AppEnv): Router {
       return created({ shift: created_, warnings: [] });
     }));
 
+  /**
+   * Remove a shift.
+   *
+   * A draft nobody was ever shown is deleted; anything published, swapped or
+   * already cancelled is set to `cancelled` instead, because a promise that
+   * was made and then withdrawn is not the same event as one that was never
+   * made, and the employee who rearranged their week deserves the difference.
+   * `cancelled` is already INERT to the staffing engine, so the coverage the
+   * shift was filling reopens either way — no coverage rule was touched.
+   */
+  r.delete('/api/households/:householdId/business/shifts/:shiftId',
+    guard(env, { permission: 'employee.schedule' }, async (ctx) => {
+      const found = await requireBusiness(ctx);
+      if (!found.ok) return found.reply;
+      const shiftId = ctx.req.params['shiftId']!;
+
+      const shift = await repo.getShift(
+        ctx.env.db, ctx.actor.household.id, found.business.id, shiftId);
+      if (shift === null) return problem(404, 'not_found', 'No such shift.');
+
+      return ctx.env.db.transaction(async (tx) => {
+        const deleted = shift.status === 'draft'
+          && await repo.deleteShift(tx, ctx.actor.household.id, found.business.id, shiftId);
+        if (deleted) {
+          await repo.writeAudit(tx, {
+            householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+            action: 'shift.delete', entity: 'shift', entityId: shiftId,
+            before: { startsAt: shift.startsAt, endsAt: shift.endsAt, status: shift.status },
+          });
+          return ok({ outcome: 'deleted', shift: null });
+        }
+
+        const cancelled = await repo.saveShift(tx, ctx.actor.household.id,
+          { ...shift, status: 'cancelled' });
+        if (cancelled === null) return problem(404, 'not_found', 'No such shift.');
+        await repo.writeAudit(tx, {
+          householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+          action: 'shift.cancel', entity: 'shift', entityId: shiftId,
+          before: { status: shift.status }, after: { status: 'cancelled' },
+        });
+        return ok({ outcome: 'cancelled', shift: cancelled });
+      });
+    }));
+
   r.post('/api/households/:householdId/business/publish',
     guard(env, { permission: 'employee.schedule' }, async (ctx) => {
       const found = await requireBusiness(ctx);
@@ -1005,6 +1293,59 @@ export function buildApiRouter(env: AppEnv): Router {
           unitCost: Math.max(0, int(ctx.req.body, 'unitCostCents') ?? 0),
           unitPrice: Math.max(0, int(ctx.req.body, 'unitPriceCents') ?? 0),
         })));
+    }));
+
+  /**
+   * Remove a product.
+   *
+   * Same shape as the employee rule, for the same reason and with sharper
+   * teeth: `sale_item.product_id` is `on delete restrict`, so a sold product
+   * cannot be deleted at all, and `inventory_movement.product_id` is
+   * `on delete cascade`, so a stocked one CAN be — taking every receive,
+   * adjustment and shrinkage row with it and leaving `reconcileInventory`
+   * unable to find drift that really happened. So:
+   *
+   *   - no movements, no sale lines  →  DELETED, nothing refers to it.
+   *   - otherwise                    →  ARCHIVED (migration 002): the row stays
+   *     for the ledger to point at, and every screen stops showing it.
+   */
+  r.delete('/api/households/:householdId/business/products/:productId',
+    guard(env, { permission: 'business.manage' }, async (ctx) => {
+      const found = await requireBusiness(ctx);
+      if (!found.ok) return found.reply;
+      const productId = ctx.req.params['productId']!;
+
+      const products = await repo.listProducts(ctx.env.db, ctx.actor.household.id, found.business.id);
+      const product = products.find((p) => p.id === productId);
+      if (product === undefined) return problem(404, 'not_found', 'No such product.');
+
+      const hasHistory = await repo.productHasHistory(
+        ctx.env.db, ctx.actor.household.id, found.business.id, productId);
+
+      return ctx.env.db.transaction(async (tx) => {
+        if (!hasHistory) {
+          const removed = await repo.deleteProduct(
+            tx, ctx.actor.household.id, found.business.id, productId);
+          if (!removed) return problem(404, 'not_found', 'No such product.');
+          await repo.writeAudit(tx, {
+            householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+            action: 'product.delete', entity: 'product', entityId: productId,
+            before: { sku: product.sku, name: product.name },
+          });
+          return ok({ outcome: 'deleted', product: null });
+        }
+
+        const archived = await repo.archiveProduct(
+          tx, ctx.actor.household.id, found.business.id, productId, ctx.now);
+        if (archived === null) return problem(404, 'not_found', 'No such product.');
+        await repo.writeAudit(tx, {
+          householdId: ctx.actor.household.id, actorMemberId: ctx.actor.member.id,
+          action: 'product.archive', entity: 'product', entityId: productId,
+          before: { sku: product.sku, name: product.name },
+          after: { archivedAt: ctx.now, reason: 'has recorded sales or stock movements' },
+        });
+        return ok({ outcome: 'archived', product: archived });
+      });
     }));
 
   r.post('/api/households/:householdId/business/inventory',
