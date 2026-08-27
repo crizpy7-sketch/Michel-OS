@@ -856,10 +856,32 @@ export async function saveEmployee(
   );
   if (rows.length === 0) return null;
   const saved = toEmployee(rows[0]!);
-  await indexDocument(tx, {
-    entity: 'employee', id: saved.id, householdId, title: saved.displayName, businessId: saved.businessId,
-  });
+  if (saved.active) {
+    await indexDocument(tx, {
+      entity: 'employee', id: saved.id, householdId, title: saved.displayName, businessId: saved.businessId,
+    });
+  } else {
+    await unindexDocument(tx, 'employee', saved.id);
+  }
   return saved;
+}
+
+/**
+ * Count work that still depends on an employee before removing them from the
+ * active roster. Historical shifts deliberately do not count: they are part of
+ * the business record and continue to keep the employee's name.
+ */
+export async function countFutureShiftsForEmployee(
+  tx: Queryable, householdId: UUID, businessId: UUID, employeeId: UUID, now: string,
+): Promise<number> {
+  if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return 0;
+  const { rows } = await tx.query<{ count: string }>(
+    `select count(*)::text as count from shift
+      where business_id = $1 and employee_id = $2
+        and ends_at > $3 and status <> 'cancelled'`,
+    [businessId, employeeId, now],
+  );
+  return Number(rows[0]?.count ?? 0);
 }
 
 export async function listShifts(

@@ -37,6 +37,7 @@ import {
 } from '../../domains/personal/lists.ts';
 import {
   acceptSwap, analyzeSchedule, approveSwap, assignShift, publishSchedule, reviewTimeOff,
+  type StaffingWarning,
 } from '../../domains/shia-baby/staffing.ts';
 import {
   estimateTaxSetAside, lowStockAlerts, recordExpense, recordMovement, recordSale,
@@ -48,7 +49,7 @@ import {
   acceptInvitation, changePassword, createInvitation, SESSION_TTL_MS,
 } from '../auth/sessions.ts';
 import type {
-  DomainKey, Occurrence, RecurrenceRule, Role, SearchEntity, ShoppingStatus, ErrandStatus,
+  DomainKey, Occurrence, RecurrenceRule, Role, SearchEntity, ShoppingStatus, ErrandStatus, Shift,
 } from '../../lib/contracts/index.ts';
 
 /* ------------------------------------------------------------- constants */
@@ -912,6 +913,49 @@ export function buildApiRouter(env: AppEnv): Router {
         })));
     }));
 
+  r.patch('/api/households/:householdId/business/employees/:employeeId',
+    guard(env, { permission: 'business.manage' }, async (ctx) => {
+      const found = await requireBusiness(ctx);
+      if (!found.ok) return found.reply;
+      const active = ctx.req.body?.['active'];
+      if (typeof active !== 'boolean') {
+        return problem(422, 'invalid', 'Choose whether this employee is active.');
+      }
+
+      const employees = await repo.listEmployees(
+        ctx.env.db, ctx.actor.household.id, found.business.id,
+      );
+      const existing = employees.find((employee) => employee.id === ctx.req.params['employeeId']);
+      if (existing === undefined) return problem(404, 'not_found', 'No such employee.');
+
+      if (!active) {
+        const futureShifts = await repo.countFutureShiftsForEmployee(
+          ctx.env.db, ctx.actor.household.id, found.business.id, existing.id, ctx.now,
+        );
+        if (futureShifts > 0) {
+          return problem(409, 'employee_has_future_shifts',
+            `${existing.displayName} still has ${futureShifts} future shift${futureShifts === 1 ? '' : 's'}. Reassign or cancel them before removing this employee.`);
+        }
+      }
+
+      if (existing.active === active) return ok(existing);
+      const updated = await ctx.env.db.transaction(async (tx) => {
+        const saved = await repo.saveEmployee(tx, ctx.actor.household.id, { ...existing, active });
+        if (saved === null) return null;
+        await repo.writeAudit(tx, {
+          householdId: ctx.actor.household.id,
+          actorMemberId: ctx.actor.member.id,
+          action: active ? 'employee.reactivate' : 'employee.deactivate',
+          entity: 'employee',
+          entityId: saved.id,
+          before: { active: existing.active },
+          after: { active: saved.active },
+        });
+        return saved;
+      });
+      return updated === null ? problem(404, 'not_found', 'No such employee.') : ok(updated);
+    }));
+
   r.post('/api/households/:householdId/business/shifts',
     guard(env, { permission: 'employee.schedule' }, async (ctx) => {
       const found = await requireBusiness(ctx);
@@ -925,22 +969,23 @@ export function buildApiRouter(env: AppEnv): Router {
       }
 
       const employeeId = optionalStr(ctx.req.body, 'employeeId', 64);
-      const created_ = await ctx.env.db.transaction((tx) =>
-        repo.insertShift(tx, ctx.actor.household.id, {
-          businessId: business.id, startsAt, endsAt,
-          ...(employeeId ? { employeeId } : {}),
-          ...(optionalStr(ctx.req.body, 'role', 60) ? { role: optionalStr(ctx.req.body, 'role', 60)! } : {}),
-        }));
-      if (created_ === null) return problem(404, 'not_found', 'No such business.');
+      const role = optionalStr(ctx.req.body, 'role', 60);
+      let warnings: StaffingWarning[] = [];
 
-      // If an employee was named, run the real assignment rules over it.
+      // Validate before writing. Previously the draft row was inserted first,
+      // so a rejected assignment could report failure while leaving a ghost
+      // shift behind.
       if (employeeId !== undefined) {
         const employees = await repo.listEmployees(ctx.env.db, ctx.actor.household.id, business.id);
         const employee = employees.find((e) => e.id === employeeId);
         if (employee === undefined) return problem(422, 'invalid', 'No such employee.');
 
+        const candidate: Shift = {
+          id: 'pending', businessId: business.id, employeeId: null,
+          startsAt, endsAt, status: 'draft', ...(role ? { role } : {}),
+        };
         const assignment = assignShift({
-          shift: created_, employee, actor: ctx.actor.member,
+          shift: candidate, employee, actor: ctx.actor.member,
           householdId: ctx.actor.household.id, businessId: business.id,
           timezone: business.timezone,
           existingShifts: await repo.listShifts(ctx.env.db, ctx.actor.household.id, business.id, {
@@ -951,13 +996,22 @@ export function buildApiRouter(env: AppEnv): Router {
           timeOff: await repo.listTimeOff(ctx.env.db, ctx.actor.household.id, business.id),
         });
         if (!assignment.ok) return fromIssues(assignment.issues);
-
-        const saved = await ctx.env.db.transaction((tx) =>
-          repo.saveShift(tx, ctx.actor.household.id, assignment.value.shift));
-        return created({ shift: saved, warnings: assignment.value.warnings });
+        warnings = assignment.value.warnings;
       }
 
-      return created({ shift: created_, warnings: [] });
+      const saved = await ctx.env.db.transaction((tx) =>
+        repo.insertShift(tx, ctx.actor.household.id, {
+          businessId: business.id, startsAt, endsAt,
+          ...(employeeId ? { employeeId } : {}),
+          ...(role ? { role } : {}),
+        }));
+      if (saved === null) return problem(404, 'not_found', 'No such business.');
+      return created({
+        shift: saved,
+        warnings: warnings.map((warning) => ({
+          ...warning, shiftIds: [saved.id],
+        })),
+      });
     }));
 
   r.post('/api/households/:householdId/business/publish',

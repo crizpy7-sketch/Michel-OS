@@ -46,9 +46,11 @@ export function registerBusinessAvailabilityRoutes(router: Router, env: AppEnv):
       }
 
       const employees = await repo.listEmployees(ctx.env.db, ctx.actor.household.id, resolved.business.id);
-      if (!employees.some((employee) => employee.id === employeeId)) {
+      const employee = employees.find((item) => item.id === employeeId);
+      if (employee === undefined) {
         return problem(404, 'not_found', 'No such employee.');
       }
+      if (!employee.active) return problem(422, 'inactive_employee', 'This employee is no longer active.');
 
       const saved = await repo.insertAvailability(ctx.env.db, ctx.actor.household.id, {
         businessId: resolved.business.id,
@@ -76,9 +78,11 @@ export function registerBusinessAvailabilityRoutes(router: Router, env: AppEnv):
         return problem(422, 'invalid', 'Choose an employee and a valid time-off window.');
       }
       const employees = await repo.listEmployees(ctx.env.db, ctx.actor.household.id, resolved.business.id);
-      if (!employees.some((employee) => employee.id === employeeId)) {
+      const employee = employees.find((item) => item.id === employeeId);
+      if (employee === undefined) {
         return problem(404, 'not_found', 'No such employee.');
       }
+      if (!employee.active) return problem(422, 'inactive_employee', 'This employee is no longer active.');
 
       const saved = await repo.insertTimeOff(ctx.env.db, ctx.actor.household.id, {
         businessId: resolved.business.id,

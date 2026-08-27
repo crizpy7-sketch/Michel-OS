@@ -571,6 +571,96 @@ test('a household with no business gets a clear 404 rather than an empty page', 
   assert.equal(response.body.error.code, 'no_business');
 });
 
+test('an owner can remove and restore an employee without erasing shift history', async (t) => {
+  const h = await startHarness({ now: NOW });
+  t.after(() => h.close());
+  const owner = await registerOwner(h);
+  const adult = await joinHousehold(h, owner, 'adult');
+
+  await call(h, `/api/households/${owner.householdId}/business`, {
+    method: 'POST', token: owner.token, body: { name: 'Shia Baby' },
+  });
+  const employee = await call<{ id: string; active: boolean }>(
+    h, `/api/households/${owner.householdId}/business/employees`, {
+      method: 'POST', token: owner.token, body: { displayName: 'Test Employee' },
+    },
+  );
+  assert.equal(employee.status, 201);
+
+  // A completed shift is history and must neither block deactivation nor lose
+  // the employee name/id relationship when the profile becomes inactive.
+  const shift = await call(h, `/api/households/${owner.householdId}/business/shifts`, {
+    method: 'POST', token: owner.token,
+    body: {
+      employeeId: employee.body.id,
+      startsAt: '2026-09-07T08:00:00.000Z',
+      endsAt: '2026-09-07T10:00:00.000Z',
+      role: 'Opening',
+    },
+  });
+  assert.equal(shift.status, 201, JSON.stringify(shift.body));
+
+  const denied = await call(h, `/api/households/${owner.householdId}/business/employees/${employee.body.id}`, {
+    method: 'PATCH', token: adult.token, body: { active: false },
+  });
+  assert.equal(denied.status, 403);
+
+  const removed = await call<{ active: boolean }>(h, `/api/households/${owner.householdId}/business/employees/${employee.body.id}`, {
+    method: 'PATCH', token: owner.token, body: { active: false },
+  });
+  assert.equal(removed.status, 200, JSON.stringify(removed.body));
+  assert.equal(removed.body.active, false);
+
+  const after = await call<{ employees: Array<{ id: string; active: boolean }>; shifts: Array<{ employeeId: string | null }> }>(
+    h, `/api/households/${owner.householdId}/business`, { token: owner.token },
+  );
+  assert.equal(after.body.employees.find((item) => item.id === employee.body.id)?.active, false);
+  assert.ok(after.body.shifts.some((item) => item.employeeId === employee.body.id));
+
+  const restored = await call<{ active: boolean }>(h, `/api/households/${owner.householdId}/business/employees/${employee.body.id}`, {
+    method: 'PATCH', token: owner.token, body: { active: true },
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(restored.body.active, true);
+});
+
+test('future shifts block employee removal and rejected assignments leave no ghost shift', async (t) => {
+  const h = await startHarness({ now: NOW });
+  t.after(() => h.close());
+  const owner = await registerOwner(h);
+
+  await call(h, `/api/households/${owner.householdId}/business`, {
+    method: 'POST', token: owner.token, body: { name: 'Shia Baby' },
+  });
+  const employee = await call<{ id: string }>(h, `/api/households/${owner.householdId}/business/employees`, {
+    method: 'POST', token: owner.token, body: { displayName: 'Scheduled Employee' },
+  });
+
+  const first = await call(h, `/api/households/${owner.householdId}/business/shifts`, {
+    method: 'POST', token: owner.token,
+    body: { employeeId: employee.body.id, startsAt: '2026-09-08T14:00:00.000Z', endsAt: '2026-09-08T18:00:00.000Z' },
+  });
+  assert.equal(first.status, 201, JSON.stringify(first.body));
+
+  const overlapping = await call(h, `/api/households/${owner.householdId}/business/shifts`, {
+    method: 'POST', token: owner.token,
+    body: { employeeId: employee.body.id, startsAt: '2026-09-08T15:00:00.000Z', endsAt: '2026-09-08T17:00:00.000Z' },
+  });
+  assert.equal(overlapping.status, 422);
+
+  const base = await call<{ shifts: unknown[] }>(h, `/api/households/${owner.householdId}/business`, { token: owner.token });
+  assert.equal(base.body.shifts.length, 1, 'a rejected assignment must not insert a draft');
+
+  const remove = await call<{ error: { code: string; message: string } }>(
+    h, `/api/households/${owner.householdId}/business/employees/${employee.body.id}`, {
+      method: 'PATCH', token: owner.token, body: { active: false },
+    },
+  );
+  assert.equal(remove.status, 409);
+  assert.equal(remove.body.error.code, 'employee_has_future_shifts');
+  assert.match(remove.body.error.message, /future shift/);
+});
+
 /* ================================================================ router */
 
 test('an unknown API path is JSON, not the app shell', async (t) => {
