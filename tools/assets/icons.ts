@@ -25,39 +25,23 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const SOURCE_DIR = new URL('../../public/icons/', import.meta.url).pathname;
-const REFERENCE_DIR = new URL('../../art/reference/', import.meta.url).pathname;
 const OUT_DIR = new URL('../../public/icons/derived/', import.meta.url).pathname;
 const MANIFEST = join(OUT_DIR, 'manifest.json');
 
 /**
- * Four mini-apps whose "production" icon file is actually a design board.
+ * There is no longer a board-crop step here.
  *
- * `public/icons/{appointments,practice,school,shia-baby}.png` are crops of the
- * concept boards in `art/reference/*-design-board.png`: a hero icon beside a
- * phone mockup, sales copy, a colour palette and a row of variations. Rendered
- * into an 88px tile, what the family sees is a sliver of the icon and a
- * fragment of a fake screenshot. The other four (`competition`, `errands`,
- * `games`, `hubby-work`, all named `-full.png` in the reference folder) are
- * genuine icons and pass through untouched.
+ * Previously four mini-apps (`appointments`, `practice`, `school`,
+ * `shia-baby`) had no standalone export: their "production" file was a crop
+ * taken out of a concept board, and the manifest marked those `provisional` so
+ * the tile could carry a "DRAFT ART" corner. Real exports have since been
+ * supplied for all thirteen, so every icon is now read straight from
+ * `public/icons/<key>.png`.
  *
- * This is a packaging mistake in the handoff, not a design decision, so the fix
- * is to take the hero icon out of the board rather than to substitute different
- * art — ASSET_MAP.md is explicit that approved artwork must not be replaced,
- * and the hero IS the approved artwork, just framed inside a presentation.
- *
- * The boxes below were read off each 1254x1254 board by eye. They are marked
- * `provisional` in the manifest, which is what puts the "DRAFT ART" corner on
- * the tile: a crop somebody chose from a concept board is not the same thing as
- * an exported production asset, and it should not be mistaken for one.
+ * Keeping the crop map would have been worse than useless: it took precedence
+ * over the source file, so the four new icons would have been silently ignored
+ * in favour of a crop of the old board.
  */
-interface Extraction { board: string; left: number; top: number; size: number }
-
-const EXTRACT: Readonly<Record<string, Extraction>> = Object.freeze({
-  appointments: { board: 'appointments-design-board.png', left: 178, top: 112, size: 478 },
-  practice:     { board: 'practice-design-board.png',     left: 268, top: 148, size: 428 },
-  school:       { board: 'school-design-board.png',       left: 266, top: 162, size: 400 },
-  'shia-baby':  { board: 'shia-baby-design-board.png',    left: 124, top:  84, size: 388 },
-});
 
 /**
  * The sizes the UI actually asks for.
@@ -75,7 +59,10 @@ export interface IconRecord {
   key: string;
   /** True when the source is a `.placeholder.png` awaiting final artwork. */
   placeholder: boolean;
-  /** True when the art was cropped out of a concept board — see EXTRACT. */
+  /**
+   * True when the art is not a final export. No icon sets this today; it is
+   * kept so the manifest shape survives the next batch of provisional art.
+   */
   provisional: boolean;
   /** Content hash of the SOURCE, so drift is detected from the art, not the output. */
   sourceHash: string;
@@ -112,17 +99,9 @@ async function run(): Promise<void> {
 
   for (const filename of sources) {
     const key = keyOf(filename);
-    const extraction = EXTRACT[key];
 
-    // The hash is taken from what is actually rendered — the cropped hero, not
-    // the board it came from — so adjusting a crop box busts the cache the same
-    // way replacing the artwork would.
-    const bytes = extraction === undefined
-      ? await readFile(join(SOURCE_DIR, filename))
-      : await sharp(await readFile(join(REFERENCE_DIR, extraction.board)))
-          .extract({ left: extraction.left, top: extraction.top, width: extraction.size, height: extraction.size })
-          .png()
-          .toBuffer();
+    // Hashed from the source art, so replacing an icon busts its cache.
+    const bytes = await readFile(join(SOURCE_DIR, filename));
 
     const sourceHash = createHash('sha256').update(bytes).digest('hex').slice(0, 16);
 
@@ -160,7 +139,7 @@ async function run(): Promise<void> {
     icons.push({
       key,
       placeholder: isPlaceholder(filename),
-      provisional: extraction !== undefined,
+      provisional: false,
       sourceHash,
       sizes,
     });
