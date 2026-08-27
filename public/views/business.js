@@ -2,7 +2,7 @@ import { h } from '../lib/dom.js';
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { card, chip, denied, empty, field, input, select, toast, withStates } from '../lib/ui.js';
-import { dayShort, money, timeRange } from '../lib/format.js';
+import { dayShort, humaniseDates, money, plural, statusLabel, timeRange } from '../lib/format.js';
 
 export async function render(mount, params, { setTitle }) {
   document.body.dataset.miniapp = 'shia-baby';
@@ -24,9 +24,14 @@ async function load(mount, sectionName) {
 }
 
 function nav(active) {
-  return h('nav', { 'aria-label': 'Shia Baby sections', style: { display: 'flex', gap: '.4rem', overflowX: 'auto', marginBottom: '1rem' } },
+  // A segmented control rather than four pill buttons in an overflowing row:
+  // the fourth tab used to sit half off the right edge with nothing to say it
+  // was there.
+  return h('nav', { class: 'segmented', 'aria-label': 'Shia Baby sections' },
     ...[['overview', 'Overview'], ['staffing', 'Staffing'], ['inventory', 'Inventory'], ['finance', 'Money']].map(([key, label]) => h('a', {
-      class: `btn${active === key ? ' btn--primary' : ''}`, href: key === 'overview' ? '/business' : `/business/${key}`,
+      class: `segmented__item${active === key ? ' segmented__item--active' : ''}`,
+      href: key === 'overview' ? '/business' : `/business/${key}`,
+      ...(active === key ? { 'aria-current': 'page' } : {}),
     }, label)));
 }
 
@@ -51,10 +56,10 @@ function overview(base) {
       h('img', { class: 'business-bear', src: '/brand/shia-baby-bear.png', alt: '' }),
     ),
     h('div', { class: 'business-metrics' },
-      businessMetric(employees.length, 'Employee'),
+      businessMetric(employees.length, employees.length === 1 ? 'Employee' : 'Employees'),
       businessMetric(todayShifts.length, 'Scheduled today'),
       businessMetric(scheduledHours, 'Scheduled hours'),
-      businessMetric(openShifts, 'Open shift'),
+      businessMetric(openShifts, openShifts === 1 ? 'Open shift' : 'Open shifts'),
     ),
   );
 
@@ -62,7 +67,7 @@ function overview(base) {
     h('div', { class: 'section__head' }, h('h2', { class: 'section__title' }, 'Employees')),
     ...employees.slice(0, 8).map((employee) => h('div', { class: 'business-list-row' },
       h('span', { class: 'business-avatar', 'aria-hidden': 'true' }, initials(employee.displayName)),
-      h('div', { class: 'business-list-row__main' }, h('strong', {}, employee.displayName), h('span', { class: 'muted tiny' }, `${scheduledHoursFor(base, employee.id)} scheduled hours`)),
+      h('div', { class: 'business-list-row__main' }, h('strong', {}, employee.displayName), h('span', { class: 'muted tiny' }, `${plural(scheduledHoursFor(base, employee.id), 'scheduled hour')}`)),
       h('span', { class: 'entry__chevron', 'aria-hidden': 'true' }, '›'),
     )),
   ) : null;
@@ -71,7 +76,7 @@ function overview(base) {
     h('div', { class: 'section__head' }, h('h2', { class: 'section__title' }, 'Warnings')),
     ...warnings.slice(0, 8).map((w) => h('div', { class: 'business-warning' },
       h('span', { class: 'business-warning__icon', 'aria-hidden': 'true' }, '!'),
-      h('span', {}, w.message),
+      h('span', {}, humaniseDates(w.message)),
     )),
   ) : null;
 
@@ -86,7 +91,7 @@ function overview(base) {
           h('span', { class: 'muted tiny' }, `${dayShort(shift.startsAt, timezone)} · ${timeRange(shift.startsAt, shift.endsAt, timezone)}`),
           shift.role ? h('span', { class: 'muted tiny' }, shift.role) : null,
         ),
-        chip(shift.status ?? 'draft', 'quiet'),
+        chip(statusLabel(shift.status, 'Draft'), shift.status === 'published' ? 'good' : 'quiet'),
       );
     }),
   ) : null;
@@ -94,6 +99,16 @@ function overview(base) {
   const inventoryPulse = products.length ? card('Inventory pulse', null,
     ...products.slice(0, 8).map((product) => h('p', {}, `${product.name}: ${product.quantityOnHand} on hand`))) : null;
   inventoryPulse?.classList.add('business-inventory-pulse');
+
+  // Nothing set up yet: four zeros and a button was a dead end that did not say
+  // what the first step is.
+  if (employees.length === 0 && shifts.length === 0 && products.length === 0) {
+    return h('div', { class: 'business-overview' }, hero, empty({
+      title: 'Shia Baby is set up and empty',
+      body: 'Add the people who work shifts, then build a week and publish it. Inventory and takings can follow once there is a schedule to hang them on.',
+      action: h('a', { class: 'btn btn--primary', href: '/business/staffing' }, 'Add the first employee'),
+    }));
+  }
 
   return h('div', { class: 'business-overview' }, hero, employeeSection, warningSection,
     shiftSection,
@@ -139,7 +154,7 @@ function staffing(base, extra, mount) {
       ...availability.map((a) => h('p', {}, `${employeeById.get(a.employeeId)?.displayName ?? 'Employee'} · ${weekdayLabel(a.weekday)} ${minuteLabel(a.startMinute)}–${minuteLabel(a.endMinute)} · ${a.available ? 'available' : 'not available'}${a.preferredWeeklyHours === undefined ? '' : ` · prefers ${a.preferredWeeklyHours} hrs/week`}`))) : null,
     timeOff.length ? card('Time off', `${timeOff.length} request${timeOff.length === 1 ? '' : 's'}`,
       ...timeOff.slice(0, 10).map((item) => h('p', {}, `${employeeById.get(item.employeeId)?.displayName ?? 'Employee'} · ${dayShort(item.startsAt, base.business.timezone)} · ${item.status}${item.reason ? ` · ${item.reason}` : ''}`))) : null,
-    (base.warnings ?? []).length ? card('Warnings', null, ...(base.warnings ?? []).map((w) => h('p', {}, chip(w.level ?? 'warning', w.level === 'blocking' ? 'alert' : 'warn'), ` ${w.message}`))) : null,
+    (base.warnings ?? []).length ? card('Warnings', null, ...(base.warnings ?? []).map((w) => h('p', {}, chip(statusLabel(w.level, 'Heads up'), w.level === 'blocking' ? 'alert' : 'warn'), ` ${humaniseDates(w.message)}`))) : null,
     (base.shifts ?? []).length === 0 ? empty({ title: 'No shifts scheduled', body: 'Assign employee work schedules here so coverage is visible alongside family commitments.' })
       : h('div', {}, ...(base.shifts ?? []).map((shift) => {
           const person = shift.employeeId ? employeeById.get(shift.employeeId)?.displayName ?? 'Unknown employee' : 'Unassigned';

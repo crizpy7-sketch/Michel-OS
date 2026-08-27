@@ -73,6 +73,9 @@ export function navigate(href, { replace = false } = {}) {
   void show();
 }
 
+/** The five destinations in the tab bar / rail, which `renderShell` also owns. */
+const TAB_ROOTS = new Set(['/', '/schedule', '/add', '/assistant', '/more']);
+
 async function show() {
   // Every navigation gets a token. An older view that finishes loading after a
   // newer one started must not paint over it — that is the bug where tapping
@@ -110,7 +113,10 @@ async function show() {
   if (token !== currentToken) return;
 
   setTitle(route.title);
-  $('[data-back]').hidden = route.pattern === '/' || history.length <= 1;
+  // A tab bar destination is a root, not somewhere you arrived from, so it does
+  // not get a back chevron — tapping Schedule and being offered "back" is the
+  // kind of small wrongness that makes an app feel like a website.
+  $('[data-back]').hidden = TAB_ROOTS.has(route.pattern) || history.length <= 1;
 
   try {
     await module.render(mount, route.params, { navigate, setTitle });

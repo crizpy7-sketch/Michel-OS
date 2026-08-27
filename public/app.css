@@ -82,6 +82,11 @@
   /* §8: 44px-ish touch targets, as a token so no control can forget. */
   --touch: 44px;
 
+  /* How much of a list row the trailing chip/avatar cluster may claim. It is a
+     token because the phone has to give the title more of the row than the
+     desktop does, and the two grids that use it must agree. */
+  --entry-meta-w: 9.5rem;
+
   --nav-h: 4.25rem;
   --rail-w: 5.5rem;
   --sidebar-w: 16rem;
@@ -438,7 +443,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .entry {
   display: grid;
-  grid-template-columns: 4.25rem 1fr auto;
+  /* The last track is capped rather than `auto`. A max-content track sized to a
+     clash chip plus four avatars wins every fight against a `1fr` sibling, and
+     the title column is what loses — it collapses to one word per line. */
+  grid-template-columns: 4.25rem minmax(0, 1fr) minmax(0, var(--entry-meta-w));
   align-items: center; gap: var(--s3);
   padding: var(--s3) var(--s4);
   background: var(--navy-raised);
@@ -475,6 +483,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   background: rgba(245,242,234,0.07);
   border: 1px solid var(--navy-line);
   border-radius: var(--radius-pill);
+  /* `.btn` is used on <a> as often as on <button>; without this the global
+     anchor underline draws straight through every link-shaped button. */
+  text-decoration: none;
   cursor: pointer;
   transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
   -webkit-tap-highlight-color: transparent;
@@ -549,8 +560,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
   box-shadow: 0 0 0 1px var(--navy);
 }
 
-.who-row { display: flex; }
+.who-row { display: flex; flex: 0 0 auto; }
 .who-row .who + .who { margin-inline-start: -0.45rem; }
+/* "+2" is a count, so it does not take a member colour to be mistaken for one. */
+.who--more { background: var(--graphite); color: var(--navy); font-variant-numeric: tabular-nums; }
 
 /* ========================================================== 7. states */
 
@@ -1119,23 +1132,39 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 .entry__time strong { color: var(--ivory); }
 .entry__title { display: block; font-size: clamp(1.15rem, 4.5vw, 1.55rem); line-height: 1.1; }
 .entry__sub { display: block; margin-top: .2rem; }
-.entry__sub--alert { color: var(--alert); }
+.entry__sub--alert {
+  color: var(--alert);
+  /* The engine's explanation restates the event's title, time and date — all of
+     which are already in this row. Two lines is enough to say which kind of
+     clash it is; the full sentence stays in the row's tooltip and on the event
+     screen. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .entry__eyebrow {
   display: block;
   margin-bottom: .2rem;
-  color: #6b78a4;
+  color: #8a7a63;
   font-family: var(--font);
   font-size: .68rem;
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
-.entry__meta { display: flex; align-items: center; gap: .4rem; justify-content: flex-end; flex-wrap: wrap; }
+.entry__meta {
+  display: flex; align-items: center; gap: .4rem; justify-content: flex-end; flex-wrap: wrap;
+  min-width: 0;
+}
 .entry__chevron { color: #8a8177; font-size: 1.8rem; line-height: 1; }
 .entry__art-slot { display: grid; place-items: center; width: 3.7rem; height: 3.7rem; }
 .entry__art { width: 3.7rem; max-width: 3.7rem; height: 3.7rem; border-radius: 16px; overflow: hidden; }
 .entry__art .tile__art { width: 3.7rem; height: 3.7rem; max-width: none; }
-.schedule-entry, .miniapp-entry { grid-template-columns: 3.8rem 4.1rem minmax(0, 1fr) auto; }
+.schedule-entry, .miniapp-entry {
+  grid-template-columns: 3.8rem 4.1rem minmax(0, 1fr) minmax(0, var(--entry-meta-w));
+}
 .entry--next { border-color: rgba(197,155,103,.42); background: linear-gradient(120deg, rgba(245,229,207,.62), rgba(255,253,249,.96) 48%); }
 
 /* Controls */
@@ -1221,19 +1250,20 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 .schedule-mode--active { color: #7d5e36; background: #f2e4d2; }
 .schedule-week {
   display: grid;
-  grid-template-columns: repeat(7, minmax(3.2rem, 1fr));
+  /* `minmax(3.2rem, …)` puts the week over 390px wide, so Sunday sat off the
+     edge behind a scrollbar. The days share whatever width there is instead. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: .15rem;
   padding: .55rem;
   margin-bottom: .9rem;
-  overflow-x: auto;
   background: rgba(255,253,249,.82);
   border: 1px solid rgba(121,96,70,.10);
   border-radius: 21px;
   box-shadow: var(--lift);
 }
 .schedule-day {
-  min-width: 3.15rem;
-  padding: .55rem .3rem;
+  min-width: 0;
+  padding: .55rem .2rem;
   color: #5f5850;
   text-decoration: none;
   text-align: center;
@@ -1241,26 +1271,48 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 }
 .schedule-day--selected { color: #654a2f; background: #f3e6d6; }
 .schedule-day__weekday, .schedule-day__date { display: block; }
-.schedule-day__weekday { font-size: .68rem; font-weight: 700; text-transform: uppercase; }
-.schedule-day__date { margin-top: .15rem; font-size: .72rem; white-space: nowrap; }
+.schedule-day__weekday {
+  font-size: clamp(.6rem, 2.4vw, .68rem); font-weight: 700; text-transform: uppercase;
+}
+.schedule-day__date {
+  margin-top: .15rem; font-size: clamp(.63rem, 2.5vw, .72rem);
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
 .schedule-filters { display: flex; gap: .55rem; flex-wrap: wrap; align-items: center; }
 .schedule-filter { min-width: 8.5rem; flex: 1 1 9rem; }
 .schedule-filters .select, .schedule-filters .input { background: rgba(255,253,249,.72); }
-.schedule-add { margin-inline-start: auto; text-decoration: underline; text-underline-offset: 3px; }
+.schedule-add { margin-inline-start: auto; font-weight: 650; }
 
 /* Compose / Add */
 .compose-kicker { margin: .2rem 0 .9rem .2rem; }
 .compose-form { display: grid; gap: 1.15rem; }
-.compose-form-card { padding: 1.25rem; }
+/* A grid item's automatic minimum size is its max-content width, so the
+   horizontally scrolling mini-app picker inside this card used to push the
+   whole page to 785px on a 390px phone. The overflow has to be allowed to
+   scroll rather than to grow, and that takes an explicit zero minimum on every
+   box between the picker and the grid. */
+.compose-form > * { min-width: 0; }
+.compose-form-card { padding: 1.25rem; min-width: 0; }
 .compose-form-card .field { padding-bottom: .9rem; margin-bottom: .85rem; border-bottom: 1px solid #eadfd3; }
 .compose-form-card .field:last-child { border-bottom: 0; }
 .compose-people { margin: .3rem 0 1rem; padding: 1rem 0 .25rem; border-top: 1px solid #eadfd3; border-bottom: 1px solid #eadfd3; }
 .compose-subtitle { margin-bottom: .65rem; font-size: 1.25rem; }
 .compose-people__list { display: flex; gap: .5rem; flex-wrap: wrap; }
-.compose-person { display: flex; align-items: center; gap: .45rem; min-height: 2.6rem; padding: .4rem .75rem; background: #f6efe6; border-radius: 999px; }
-.compose-picker-section { overflow: hidden; }
+.compose-person { display: flex; align-items: center; gap: .5rem; min-height: var(--touch); padding: .4rem .85rem; background: #f6efe6; border-radius: 999px; cursor: pointer; }
+/* A 13px browser-default checkbox inside a 44px pill is a target people miss
+   even though the label around it is tappable. */
+.compose-person input[type='checkbox'] { width: 1.15rem; height: 1.15rem; accent-color: var(--gold); }
+.compose-person:has(input:checked) { background: #f5e6d2; box-shadow: inset 0 0 0 1px rgba(197,155,103,.45); }
+.compose-picker-section { min-width: 0; overflow: hidden; }
 .compose-picker-section .page-kicker { margin-bottom: .65rem; }
-.compose-miniapps { display: flex; gap: .65rem; overflow-x: auto; padding: .15rem .1rem .5rem; scroll-snap-type: x proximity; }
+.compose-miniapps {
+  display: flex; gap: .65rem; overflow-x: auto;
+  padding: .35rem .1rem .5rem;
+  scroll-snap-type: x proximity;
+  /* The row scrolls; a scrollbar that only appears on hover is not a hint, so
+     the last tile is deliberately allowed to peek past the edge. */
+  scrollbar-width: thin;
+}
 .compose-miniapp {
   flex: 0 0 7rem;
   min-height: 7.5rem;
@@ -1277,7 +1329,13 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
   scroll-snap-align: start;
   box-shadow: 0 5px 16px rgba(92,67,43,.05);
 }
-.compose-miniapp--selected { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(197,155,103,.10), var(--lift); }
+/* Selected is a filled tile with a ring, not a border tint — at a glance across
+   a scrolling row a 1px colour change is not a selection state. */
+.compose-miniapp--selected {
+  border-color: var(--gold);
+  background: #fbf1e3;
+  box-shadow: 0 0 0 2px rgba(197,155,103,.28), var(--lift);
+}
 .compose-miniapp__art { width: 3.6rem; height: 3.6rem; }
 .compose-miniapp__image, .compose-miniapp__image .tile__art { width: 3.6rem; height: 3.6rem; }
 .compose-miniapp__label { font-family: var(--font-display); font-size: .92rem; }
@@ -1308,27 +1366,80 @@ body[data-route='/'] .shell__body { padding-top: calc(var(--s4) + env(safe-area-
 .shopping-add { padding: 1.35rem; }
 .shopping-add .card__title { font-size: clamp(1.8rem, 7vw, 2.35rem); }
 .shopping-add__form .btn { min-height: 3.4rem; font-family: var(--font-display); font-size: 1.2rem; }
-.shopping-list { display: grid; gap: .85rem; }
+
+/* Aisle headings. Small and quiet — they organise the list, they are not
+   competing with the things on it. */
+.shopping-aisle + .shopping-aisle { margin-top: 1.4rem; }
+.shopping-aisle__title {
+  margin: 0 0 .55rem .35rem;
+  color: #655d55;
+  font-family: var(--font);
+  font-size: .74rem;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.shopping-aisle--done { opacity: .7; }
+
+.shopping-list { display: grid; gap: .6rem; }
 .shopping-item {
   display: grid;
-  grid-template-columns: 4.1rem minmax(0,1fr) auto;
-  gap: .95rem;
+  grid-template-columns: 3.2rem minmax(0,1fr) auto;
+  gap: .85rem;
   align-items: center;
-  min-height: 8rem;
-  padding: 1rem 1.1rem;
+  /* Was 8rem tall with a 2rem serif name — a poster per banana. A list you tick
+     your way down wants to show a whole aisle at once. */
+  min-height: 4.4rem;
+  padding: .7rem .9rem;
   background: rgba(255,253,249,.90);
   border: 1px solid rgba(121,96,70,.10);
   border-radius: 24px;
   box-shadow: var(--lift);
   transition: transform var(--slow) var(--ease), opacity var(--slow) var(--ease);
 }
-.shopping-item__art { width: 4rem; height: 4rem; display: grid; place-items: center; color: #8a6a44; background: #f7eee1; border-radius: 18px; }
-.shopping-item__name { margin: 0; font-size: clamp(1.45rem, 6vw, 2rem); line-height: 1; }
-.shopping-item__qty { margin: .55rem 0 0; color: #756d64; }
+.shopping-item__art { width: 3.1rem; height: 3.1rem; display: grid; place-items: center; color: #8a6a44; background: #f7eee1; border-radius: 14px; }
+.shopping-item__name { margin: 0; font-size: clamp(1.1rem, 4.4vw, 1.35rem); line-height: 1.15; }
+.shopping-item__qty { margin: .1rem 0 0; color: #756d64; font-size: .85rem; font-variant-numeric: tabular-nums; }
 .shopping-item__store { margin: .1rem 0 0; color: #978e84; font-size: .75rem; }
 .shopping-item__state { align-self: center; }
-.shopping-item__buy { min-width: 5rem; min-height: 2.75rem; justify-content: center; border: 0; cursor: pointer; }
+.shopping-item__buy {
+  min-width: 5.2rem; min-height: var(--touch); padding-inline: var(--s3); justify-content: center;
+  color: #85602f; border-color: rgba(197, 155, 103, .45); background: rgba(255, 253, 249, .9);
+}
+.shopping-item__buy:hover:not(:disabled) { color: #6d4d24; background: #f8efe1; }
 .shopping-item--bought { opacity: .78; }
+.shopping-item--bought .shopping-item__name { text-decoration: line-through; text-decoration-color: rgba(117,109,100,.5); }
+.shopping-item--bought .shopping-item__art { color: var(--good); background: var(--good-dim); }
+
+/* A segmented control. Four sections that fit the width they are given rather
+   than a row of pills whose last item hangs off the edge of a phone. */
+.segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: .2rem;
+  padding: .25rem;
+  margin-bottom: 1.2rem;
+  background: rgba(255, 253, 249, .72);
+  border: 1px solid rgba(121, 96, 70, .12);
+  border-radius: 999px;
+  box-shadow: 0 5px 16px rgba(92, 67, 43, .05);
+}
+.segmented__item {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 2.7rem;
+  padding: .3rem .4rem;
+  color: #776e64;
+  font-size: clamp(.74rem, 3vw, .86rem);
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  border-radius: 999px;
+  transition: color var(--fast) var(--ease), background var(--fast) var(--ease);
+}
+.segmented__item:hover { color: var(--ivory); background: rgba(242, 228, 210, .55); }
+/* Not colour alone: the selected tab is also the only filled one. */
+.segmented__item--active { color: #7d5e36; background: #f2e4d2; font-weight: 700; }
 
 /* Shia Baby */
 .business-hero {
@@ -1386,6 +1497,12 @@ body[data-miniapp='hubby-work'] .entry__eyebrow { color: #596b89; }
 @keyframes editorial-view-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 @keyframes editorial-card-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
+/* The home screen's two reading columns. One column on a phone; side by side
+   once there is width for two, so the brief and the schedule are both above the
+   fold instead of the schedule living under 900px-wide two-line cards. */
+.home__columns { display: grid; gap: 0 var(--s5); }
+.home__column > .section:last-child { margin-bottom: 0; }
+
 /* Tablet and desktop keep the light editorial system while preserving the
    existing rail/sidebar responsive architecture. */
 @media (min-width: 48rem) {
@@ -1398,21 +1515,35 @@ body[data-miniapp='hubby-work'] .entry__eyebrow { color: #596b89; }
   .sidenav__item[aria-current='page'] { color: #7c5b31; background: #f2e4d2; }
   .shell__body { padding: var(--s5) var(--s5) var(--s7); }
   .topbar { padding-inline: var(--s5); }
+  /* §3 asks for a 4–5 column icon grid on a tablet, across the width it has —
+     a 3-wide grid capped at 34rem left half an iPad empty beside it. */
   .home-grid { grid-template-columns: repeat(5, 1fr); }
   .business-hero { padding: 1.8rem; }
+}
+
+@media (min-width: 62rem) {
+  /* The brief is the wider of the two: its cards carry sentences, the schedule
+     carries rows. */
+  .home__columns { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); }
+  /* The greeting no longer needs the phone's 11ch wrap once it has a column. */
+  .brief__greeting { max-width: 18ch; }
 }
 
 @media (min-width: 74rem) {
   .sidenav { background: rgba(255,253,249,.93); }
   .topbar { padding-inline: var(--s6); }
-  .home-grid { grid-template-columns: repeat(6, 1fr); }
+  .home-grid { grid-template-columns: repeat(9, 1fr); }
   .shell__body { padding: var(--s6) var(--s6) var(--s8); }
+  /* A card holding two lines does not need 900px. Keeping the measure sane is
+     the difference between a dashboard and a stretched phone screen. */
+  .home__column .card p, .home__column .entry__main { max-width: 62ch; }
 }
 
 @media (max-width: 30rem) {
+  :root { --entry-meta-w: 7.6rem; }
   .schedule-toolbar__head { align-items: flex-start; flex-direction: column; }
   .schedule-mode-tabs { width: 100%; }
-  .schedule-entry, .miniapp-entry { grid-template-columns: 3.5rem minmax(0,1fr) auto; }
+  .schedule-entry, .miniapp-entry { grid-template-columns: 3.5rem minmax(0,1fr) minmax(0, var(--entry-meta-w)); }
   .schedule-entry > .entry__time, .miniapp-entry > .entry__time { display: none; }
   .shopping-item { grid-template-columns: 3.5rem minmax(0,1fr) auto; gap: .7rem; }
   .shopping-item__art { width: 3.4rem; height: 3.4rem; }
@@ -1421,6 +1552,18 @@ body[data-miniapp='hubby-work'] .entry__eyebrow { color: #596b89; }
   .business-metric:nth-child(4) { border-top: 1px solid #eadfd3; padding-top: .75rem; }
   .assistant-intro__body { grid-template-columns: 4.3rem 1fr; }
   .assistant-orb { width: 4.1rem; height: 4.1rem; }
+}
+
+/* 320px. There is no width here for a title column AND a chip-and-avatars
+   column side by side — squeezing them together is what wrapped titles three
+   deep. The trailing cluster drops onto its own line under the title instead,
+   and the chevron goes: the whole row is the button, so it was decoration
+   competing for the scarcest space on the smallest screen. */
+@media (max-width: 22.5rem) {
+  .entry, .schedule-entry, .miniapp-entry { grid-template-columns: 3.2rem minmax(0, 1fr); }
+  .entry__meta { grid-column: 2; justify-content: flex-start; margin-top: .15rem; }
+  .entry__chevron { display: none; }
+  .schedule-filters .schedule-add { width: 100%; margin-inline-start: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

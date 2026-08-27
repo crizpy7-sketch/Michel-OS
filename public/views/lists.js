@@ -2,7 +2,7 @@ import { h } from '../lib/dom.js';
 import { api } from '../lib/api.js';
 import { state } from '../lib/state.js';
 import { card, chip, empty, field, icon, ICONS, input, select, toast, withStates } from '../lib/ui.js';
-import { dayShort, time } from '../lib/format.js';
+import { dayShort, statusLabel, time } from '../lib/format.js';
 
 export async function render(mount, _params, { setTitle }) {
   const kind = location.pathname.includes('errands') ? 'errands' : location.pathname.includes('reminders') ? 'reminders' : 'shopping';
@@ -17,32 +17,91 @@ async function load(mount, kind) {
 
 function shopping(data, mount) {
   const items = data.items ?? [];
+  if (items.length === 0) {
+    return h('div', { class: 'shopping-page' },
+      state.can('event.create') ? addShopping(mount) : null,
+      empty({ title: 'Shopping list is clear', body: 'Add something when you need it.' }));
+  }
+
+  // Still needed first, then what is already in the trolley. A list you are
+  // working down should not make you scroll past six ticked-off rows to find
+  // the seventh thing you still have to pick up.
+  const outstanding = items.filter((item) => item.status !== 'purchased');
+  const bought = items.filter((item) => item.status === 'purchased');
+
+  const groups = aisles(outstanding);
+  // Headings are only worth their space when they actually gather something.
+  // Six items in six aisles is six headings and no grouping, which is longer to
+  // scroll and no easier to shop.
+  const grouped = outstanding.length >= 4 && groups.length * 2 <= outstanding.length;
+
   return h('div', { class: 'shopping-page' },
     state.can('event.create') ? addShopping(mount) : null,
-    items.length === 0 ? empty({ title: 'Shopping list is clear', body: 'Add something when you need it.' })
-      : h('div', { class: 'shopping-list' }, ...items.map((item) => shoppingItem(item, mount))),
+    ...(grouped
+      ? groups.map(([aisle, group]) => h('section', { class: 'shopping-aisle' },
+          h('h2', { class: 'shopping-aisle__title' }, aisle),
+          h('div', { class: 'shopping-list' }, ...group.map((item) => shoppingItem(item, mount))),
+        ))
+      : [h('div', { class: 'shopping-list' }, ...outstanding.map((item) => shoppingItem(item, mount)))]),
+    bought.length === 0 ? null : h('section', { class: 'shopping-aisle shopping-aisle--done' },
+      h('h2', { class: 'shopping-aisle__title' }, `In the trolley · ${bought.length}`),
+      h('div', { class: 'shopping-list' }, ...bought.map((item) => shoppingItem(item, mount))),
+    ),
   );
+}
+
+/**
+ * Group by aisle, in the order the aisles first appear.
+ *
+ * A grocery list is walked, not read: two things from the same aisle should be
+ * next to each other on screen so they are picked up in one stop. Items with no
+ * category collect at the end rather than each forming their own heading.
+ */
+function aisles(items) {
+  const groups = new Map();
+  for (const item of items) {
+    const key = (item.category ?? '').trim() || (item.store ?? '').trim() || 'Anything else';
+    const label = key.charAt(0).toUpperCase() + key.slice(1);
+    const list = groups.get(label) ?? [];
+    list.push(item);
+    groups.set(label, list);
+  }
+  const entries = [...groups.entries()];
+  const other = entries.filter(([label]) => label === 'Anything else');
+  return [...entries.filter(([label]) => label !== 'Anything else'), ...other];
 }
 
 function shoppingItem(item, mount) {
   const purchased = item.status === 'purchased';
+  const quantity = Number(item.quantity);
   return h('article', { class: `shopping-item${purchased ? ' shopping-item--bought' : ''}` },
-    h('div', { class: 'shopping-item__art', 'aria-hidden': 'true' }, icon(ICONS.cart, 26)),
+    h('div', { class: 'shopping-item__art', 'aria-hidden': 'true' },
+      icon(purchased ? ICONS.check : ICONS.cart, 24)),
     h('div', { class: 'shopping-item__main' },
       h('h3', { class: 'shopping-item__name' }, item.name),
-      h('p', { class: 'shopping-item__qty' }, item.quantity ? `Qty ${item.quantity}` : 'Qty 1'),
-      item.store || item.category ? h('p', { class: 'shopping-item__store' }, item.store || item.category) : null,
+      // `Qty 1` on every row of a shopping list is six words that say nothing.
+      // A quantity is worth the line only when it is not one.
+      Number.isFinite(quantity) && quantity > 1
+        ? h('p', { class: 'shopping-item__qty' }, `× ${quantity}`) : null,
+      item.store ? h('p', { class: 'shopping-item__store' }, item.store) : null,
     ),
     h('div', { class: 'shopping-item__state' },
       purchased
-        ? chip('bought', 'good')
-        : h('button', { class: 'chip chip--gold shopping-item__buy', type: 'button', 'aria-label': `Mark ${item.name} as bought`, onClick: async (event) => {
-            event.currentTarget.disabled = true;
-            try {
-              await api.patch(`/api/households/${state.household.id}/shopping/${item.id}`, { status: 'purchased' });
-              toast('Marked bought'); await load(mount, 'shopping');
-            } catch (error) { toast(error.message ?? 'That did not work.', 'error'); event.currentTarget.disabled = false; }
-          } }, 'needed'),
+        ? chip(statusLabel('purchased'), 'good')
+        // The control used to be labelled with the state it was already in
+        // ("needed"), which reads as a status badge rather than something you
+        // can press. It now says what pressing it does.
+        : h('button', {
+            class: 'btn shopping-item__buy', type: 'button',
+            'aria-label': `Mark ${item.name} as bought`,
+            onClick: async (event) => {
+              event.currentTarget.disabled = true;
+              try {
+                await api.patch(`/api/households/${state.household.id}/shopping/${item.id}`, { status: 'purchased' });
+                toast(`${item.name} — got it`); await load(mount, 'shopping');
+              } catch (error) { toast(error.message ?? 'That did not work.', 'error'); event.currentTarget.disabled = false; }
+            },
+          }, 'Got it'),
     ),
   );
 }
@@ -68,7 +127,7 @@ function errands(data, mount) {
       : h('div', { class: 'stack' }, ...items.map((item) => card(item.title, item.location || null,
           item.dueAt ? h('p', {}, `${dayShort(item.dueAt, state.timezone)} · ${time(item.dueAt, state.timezone)}`) : null,
           h('div', { class: 'row row--wrap' },
-            chip(item.status ?? 'open', item.status === 'done' ? 'good' : 'quiet'),
+            chip(statusLabel(item.status, 'Open'), item.status === 'done' ? 'good' : 'quiet'),
             item.status !== 'done' ? action('Done', async () => {
               await api.patch(`/api/households/${state.household.id}/errands/${item.id}`, { status: 'done' });
               toast('Errand complete'); await load(mount, 'errands');
@@ -94,13 +153,13 @@ function reminders(data, mount) {
   const items = data.reminders ?? [];
   return h('div', { class: 'utility-list-page' }, state.can('event.create') ? addReminder(mount) : null,
     items.length === 0 ? empty({ title: 'No reminders', body: 'Your reminder list is clear.' })
-      : h('div', { class: 'stack' }, ...items.map((item) => card(item.title, item.status ?? null,
+      : h('div', { class: 'stack' }, ...items.map((item) => card(item.title, statusLabel(item.status) || null,
           h('p', {}, `${dayShort(item.dueAt, state.timezone)} · ${time(item.dueAt, state.timezone)}`),
           h('div', { class: 'row row--wrap' },
             !['completed', 'dismissed'].includes(item.status) ? action('Complete', async () => {
               await api.post(`/api/households/${state.household.id}/reminders/${item.id}/complete`);
               toast('Reminder complete'); await load(mount, 'reminders');
-            }) : chip(item.status, 'good'),
+            }) : chip(statusLabel(item.status), 'good'),
             item.status !== 'dismissed' ? action('Snooze 1 hour', async () => {
               await api.post(`/api/households/${state.household.id}/reminders/${item.id}/snooze`, {});
               toast('Snoozed'); await load(mount, 'reminders');

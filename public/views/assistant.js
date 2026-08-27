@@ -9,8 +9,15 @@ export async function render(mount) {
     return;
   }
 
+  // The example used a fixed name that belongs to no household using this app.
+  // A prompt suggestion is more persuasive when it names somebody the person
+  // reading it actually has to schedule around.
+  const example = state.members.find((m) => m.id !== state.member?.id && m.active !== false)
+    ?? state.members.find((m) => m.active !== false);
+  const who = example?.displayName ?? 'Sam';
+
   const prompt = textarea({
-    placeholder: 'Try: “Sydney has a game Saturday at 9 AM” or “add milk to the shopping list”',
+    placeholder: `Try: “${who} has a game Saturday at 9 AM” or “add milk to the shopping list”`,
     maxlength: 4000,
     required: true,
   });
