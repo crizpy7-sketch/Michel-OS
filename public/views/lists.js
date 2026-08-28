@@ -70,29 +70,34 @@ function shoppingItem(item, mount) {
       Number.isFinite(quantity) && quantity > 1
         ? h('p', { class: 'shopping-item__qty' }, `× ${quantity}`) : null,
       item.store ? h('p', { class: 'shopping-item__store' }, item.store) : null,
-    ),
-    h('div', { class: 'shopping-item__state' },
-      purchased
-        ? action('Need again', async () => {
-            await api.patch(`/api/households/${state.household.id}/shopping/${item.id}`, { status: 'needed' });
-            toast(`${item.name} moved back to the list`); await load(mount, 'shopping');
-          })
-        : h('button', {
-            class: 'btn shopping-item__buy', type: 'button',
-            'aria-label': `Mark ${item.name} as bought`,
-            onClick: async (event) => {
-              event.currentTarget.disabled = true;
-              try {
-                await api.patch(`/api/households/${state.household.id}/shopping/${item.id}`, { status: 'purchased' });
-                toast(`${item.name} — got it`); await load(mount, 'shopping');
-              } catch (error) { toast(error.message ?? 'That did not work.', 'error'); event.currentTarget.disabled = false; }
-            },
-          }, 'Got it'),
-      canDelete ? removeAction(`Remove ${item.name}`, async () => {
-        if (!confirm(`Remove ${item.name} from the shopping list?`)) return;
-        await api.del(`/api/households/${state.household.id}/shopping/${item.id}`);
-        toast(`${item.name} removed`); await load(mount, 'shopping');
-      }) : null,
+      // Actions belong below the item details, not in a competing auto-width
+      // grid column. Long item names must keep the readable width of the card.
+      h('div', {
+        class: 'shopping-item__state',
+        style: { display: 'flex', flexWrap: 'wrap', gap: '.5rem', marginTop: '.65rem', alignItems: 'center' },
+      },
+        purchased
+          ? action('Need again', async () => {
+              await api.patch(`/api/households/${state.household.id}/shopping/${item.id}`, { status: 'needed' });
+              toast(`${item.name} moved back to the list`); await load(mount, 'shopping');
+            })
+          : h('button', {
+              class: 'btn shopping-item__buy', type: 'button',
+              'aria-label': `Mark ${item.name} as bought`,
+              onClick: async (event) => {
+                event.currentTarget.disabled = true;
+                try {
+                  await api.patch(`/api/households/${state.household.id}/shopping/${item.id}`, { status: 'purchased' });
+                  toast(`${item.name} — got it`); await load(mount, 'shopping');
+                } catch (error) { toast(error.message ?? 'That did not work.', 'error'); event.currentTarget.disabled = false; }
+              },
+            }, 'Got it'),
+        canDelete ? removeAction('Remove', async () => {
+          if (!confirm(`Remove ${item.name} from the shopping list?`)) return;
+          await api.del(`/api/households/${state.household.id}/shopping/${item.id}`);
+          toast(`${item.name} removed`); await load(mount, 'shopping');
+        }) : null,
+      ),
     ),
   );
 }
