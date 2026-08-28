@@ -23,16 +23,10 @@ function shopping(data, mount) {
       empty({ title: 'Shopping list is clear', body: 'Add something when you need it.' }));
   }
 
-  // Still needed first, then what is already in the trolley. A list you are
-  // working down should not make you scroll past six ticked-off rows to find
-  // the seventh thing you still have to pick up.
   const outstanding = items.filter((item) => item.status !== 'purchased');
   const bought = items.filter((item) => item.status === 'purchased');
 
   const groups = aisles(outstanding);
-  // Headings are only worth their space when they actually gather something.
-  // Six items in six aisles is six headings and no grouping, which is longer to
-  // scroll and no easier to shop.
   const grouped = outstanding.length >= 4 && groups.length * 2 <= outstanding.length;
 
   return h('div', { class: 'shopping-page' },
@@ -50,13 +44,6 @@ function shopping(data, mount) {
   );
 }
 
-/**
- * Group by aisle, in the order the aisles first appear.
- *
- * A grocery list is walked, not read: two things from the same aisle should be
- * next to each other on screen so they are picked up in one stop. Items with no
- * category collect at the end rather than each forming their own heading.
- */
 function aisles(items) {
   const groups = new Map();
   for (const item of items) {
@@ -74,23 +61,22 @@ function aisles(items) {
 function shoppingItem(item, mount) {
   const purchased = item.status === 'purchased';
   const quantity = Number(item.quantity);
+  const canDelete = state.can('event.delete.own') || state.can('event.delete.any');
   return h('article', { class: `shopping-item${purchased ? ' shopping-item--bought' : ''}` },
     h('div', { class: 'shopping-item__art', 'aria-hidden': 'true' },
       icon(purchased ? ICONS.check : ICONS.cart, 24)),
     h('div', { class: 'shopping-item__main' },
       h('h3', { class: 'shopping-item__name' }, item.name),
-      // `Qty 1` on every row of a shopping list is six words that say nothing.
-      // A quantity is worth the line only when it is not one.
       Number.isFinite(quantity) && quantity > 1
         ? h('p', { class: 'shopping-item__qty' }, `× ${quantity}`) : null,
       item.store ? h('p', { class: 'shopping-item__store' }, item.store) : null,
     ),
     h('div', { class: 'shopping-item__state' },
       purchased
-        ? chip(statusLabel('purchased'), 'good')
-        // The control used to be labelled with the state it was already in
-        // ("needed"), which reads as a status badge rather than something you
-        // can press. It now says what pressing it does.
+        ? action('Need again', async () => {
+            await api.patch(`/api/households/${state.household.id}/shopping/${item.id}`, { status: 'needed' });
+            toast(`${item.name} moved back to the list`); await load(mount, 'shopping');
+          })
         : h('button', {
             class: 'btn shopping-item__buy', type: 'button',
             'aria-label': `Mark ${item.name} as bought`,
@@ -102,6 +88,11 @@ function shoppingItem(item, mount) {
               } catch (error) { toast(error.message ?? 'That did not work.', 'error'); event.currentTarget.disabled = false; }
             },
           }, 'Got it'),
+      canDelete ? removeAction(`Remove ${item.name}`, async () => {
+        if (!confirm(`Remove ${item.name} from the shopping list?`)) return;
+        await api.del(`/api/households/${state.household.id}/shopping/${item.id}`);
+        toast(`${item.name} removed`); await load(mount, 'shopping');
+      }) : null,
     ),
   );
 }
@@ -122,6 +113,7 @@ function addShopping(mount) {
 
 function errands(data, mount) {
   const items = data.errands ?? [];
+  const canDelete = state.can('event.delete.own') || state.can('event.delete.any');
   return h('div', { class: 'utility-list-page' }, state.can('event.create') ? addErrand(mount) : null,
     items.length === 0 ? empty({ title: 'No errands', body: 'Nothing to run out for right now.' })
       : h('div', { class: 'stack' }, ...items.map((item) => card(item.title, item.location || null,
@@ -131,6 +123,11 @@ function errands(data, mount) {
             item.status !== 'done' ? action('Done', async () => {
               await api.patch(`/api/households/${state.household.id}/errands/${item.id}`, { status: 'done' });
               toast('Errand complete'); await load(mount, 'errands');
+            }) : null,
+            canDelete ? removeAction('Remove', async () => {
+              if (!confirm(`Remove “${item.title}”?`)) return;
+              await api.del(`/api/households/${state.household.id}/errands/${item.id}`);
+              toast('Errand removed'); await load(mount, 'errands');
             }) : null,
           ),
         ))));
@@ -151,6 +148,7 @@ function addErrand(mount) {
 
 function reminders(data, mount) {
   const items = data.reminders ?? [];
+  const canDelete = state.can('event.delete.own') || state.can('event.delete.any');
   return h('div', { class: 'utility-list-page' }, state.can('event.create') ? addReminder(mount) : null,
     items.length === 0 ? empty({ title: 'No reminders', body: 'Your reminder list is clear.' })
       : h('div', { class: 'stack' }, ...items.map((item) => card(item.title, statusLabel(item.status) || null,
@@ -163,6 +161,11 @@ function reminders(data, mount) {
             item.status !== 'dismissed' ? action('Snooze 1 hour', async () => {
               await api.post(`/api/households/${state.household.id}/reminders/${item.id}/snooze`, {});
               toast('Snoozed'); await load(mount, 'reminders');
+            }) : null,
+            canDelete ? removeAction('Remove', async () => {
+              if (!confirm(`Remove reminder “${item.title}”?`)) return;
+              await api.del(`/api/households/${state.household.id}/reminders/${item.id}`);
+              toast('Reminder removed'); await load(mount, 'reminders');
             }) : null,
           ),
         ))));
@@ -185,6 +188,14 @@ function action(label, fn) {
   return h('button', { class: 'btn btn--quiet', type: 'button', onClick: async (e) => {
     e.currentTarget.disabled = true;
     try { await fn(); } catch (error) { toast(error.message ?? 'That did not work.', 'error'); }
+    finally { e.currentTarget.disabled = false; }
+  } }, label);
+}
+
+function removeAction(label, fn) {
+  return h('button', { class: 'btn btn--danger', type: 'button', onClick: async (e) => {
+    e.currentTarget.disabled = true;
+    try { await fn(); } catch (error) { toast(error.message ?? 'Could not remove it.', 'error'); }
     finally { e.currentTarget.disabled = false; }
   } }, label);
 }
