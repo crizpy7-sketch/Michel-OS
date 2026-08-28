@@ -6,18 +6,54 @@ import { card, chip, field, input, select, toast, withStates } from '../lib/ui.j
 export async function render(mount) { await load(mount); }
 
 async function load(mount) {
-  await withStates(mount, 'list', () => api.get(`/api/households/${state.household.id}`),
-    (data) => h('div', {},
-      card(data.household.name, data.household.timezone, h('p', { style: { color: 'var(--muted)' } }, `${(data.members ?? []).length} family profiles`)),
+  await withStates(mount, 'list', async () => {
+    const household = await api.get(`/api/households/${state.household.id}`);
+    const invitations = state.can('member.manage')
+      ? await api.get(`/api/households/${state.household.id}/invitations`).catch(() => ({ invitations: [] }))
+      : { invitations: [] };
+    return { household, invitations: invitations.invitations ?? [] };
+  }, ({ household: data, invitations }) => {
+    const members = data.members ?? [];
+    const activeCount = members.filter((member) => member.active !== false).length;
+    return h('div', {},
+      card(data.household.name, data.household.timezone,
+        h('p', { style: { color: 'var(--muted)' } }, `${activeCount} active family profile${activeCount === 1 ? '' : 's'}`)),
       state.can('member.manage') ? addMember(mount) : null,
-      h('div', { style: { marginTop: '1rem' } }, ...(data.members ?? []).map((member) => card(member.displayName, member.role,
-        h('div', { style: { display: 'flex', gap: '.5rem', alignItems: 'center' } },
-          chip(member.active === false ? 'Inactive' : 'Active', member.active === false ? 'quiet' : 'good'),
-          member.userId ? chip('Login', 'info') : chip('Managed profile', 'quiet'),
-        ),
-      ))),
-      state.can('member.manage') ? inviteBox() : null,
-    ));
+      h('div', { style: { marginTop: '1rem' } }, ...members.map((member) => memberCard(member, mount))),
+      state.can('member.manage') ? inviteBox(mount, invitations) : null,
+    );
+  });
+}
+
+function memberCard(member, mount) {
+  const active = member.active !== false;
+  return card(member.displayName, member.role,
+    h('div', { class: 'row row--wrap' },
+      chip(active ? 'Active' : 'Inactive', active ? 'good' : 'quiet'),
+      member.userId ? chip('Login', 'info') : chip('Managed profile', 'quiet'),
+      state.can('member.manage') && active ? h('button', {
+        class: 'btn btn--danger',
+        type: 'button',
+        onClick: async (event) => {
+          const button = event.currentTarget;
+          const meaning = member.userId
+            ? `${member.displayName} will no longer be able to access this household. Their history stays intact.`
+            : `${member.displayName} will be removed from active family choices. Their past schedule history stays intact.`;
+          if (!confirm(`Remove ${member.displayName}?\n\n${meaning}`)) return;
+          button.disabled = true;
+          try {
+            await api.del(`/api/households/${state.household.id}/members/${member.id}`);
+            await loadHousehold(state.household.id);
+            toast(`${member.displayName} removed from active household access`);
+            await load(mount);
+          } catch (error) {
+            toast(error.message ?? 'Could not remove that person.', 'error');
+            button.disabled = false;
+          }
+        },
+      }, member.userId ? 'Remove access' : 'Remove profile') : null,
+    ),
+  );
 }
 
 function addMember(mount) {
@@ -35,10 +71,34 @@ function addMember(mount) {
       h('button', { class: 'btn', type: 'submit' }, 'Add profile')));
 }
 
-function inviteBox() {
+function inviteBox(mount, invitations) {
   const email = input({ type: 'email', placeholder: 'person@example.com' });
   const role = select([['adult', 'Adult'], ['teen', 'Teen'], ['viewer', 'Viewer'], ['employee', 'Employee']]);
   const output = h('div');
+  const pending = invitations.length === 0 ? null : h('div', { class: 'stack', style: { marginTop: '1rem' } },
+    h('p', { class: 'muted tiny' }, `Pending invitation${invitations.length === 1 ? '' : 's'}`),
+    ...invitations.map((invitation) => h('div', { class: 'row row--wrap' },
+      h('div', { style: { flex: '1 1 12rem' } },
+        h('strong', {}, invitation.email || 'Invitation'),
+        h('p', { class: 'muted tiny', style: { margin: '.15rem 0 0' } }, invitation.role ? `Role: ${invitation.role}` : 'Pending'),
+      ),
+      h('button', {
+        class: 'btn btn--danger', type: 'button',
+        onClick: async (event) => {
+          if (!confirm(`Revoke the invitation for ${invitation.email || 'this person'}?`)) return;
+          event.currentTarget.disabled = true;
+          try {
+            await api.del(`/api/households/${state.household.id}/invitations/${invitation.id}`);
+            toast('Invitation revoked'); await load(mount);
+          } catch (error) {
+            toast(error.message ?? 'Could not revoke that invitation.', 'error');
+            event.currentTarget.disabled = false;
+          }
+        },
+      }, 'Revoke'),
+    )),
+  );
+
   const box = card('Invite someone with a login', 'their own account',
     h('p', { class: 'muted' }, 'For a partner or an older child who should sign in on their own phone. This is the one to use so two people can both add to the same schedule.'),
     h('form', { onSubmit: async (e) => {
@@ -49,18 +109,14 @@ function inviteBox() {
         output.replaceChildren(token ? inviteCode(token) : h('p', { style: { marginTop: '.75rem' } }, 'Invitation created.'));
         toast('Invitation created');
       } catch (error) { toast(error.message ?? 'Could not create invitation.', 'error'); }
-    } }, field('Email', email), field('Role', role), h('button', { class: 'btn btn--primary', type: 'submit' }, 'Create invitation')), output);
+    } }, field('Email', email), field('Role', role), h('button', { class: 'btn btn--primary', type: 'submit' }, 'Create invitation')),
+    output,
+    pending,
+  );
   box.classList.add('invite-card');
   return box;
 }
 
-/**
- * The invitation code, and what to do with it.
- *
- * Nothing emails this — it is handed over by whoever created it — so the code
- * on its own is only half an instruction. The button is here because reading a
- * token out loud is not something anyone should have to do.
- */
 function inviteCode(token) {
   const copy = h('button', { class: 'btn', type: 'button', onClick: async () => {
     try { await navigator.clipboard.writeText(token); toast('Invitation code copied'); }

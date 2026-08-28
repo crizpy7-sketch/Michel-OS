@@ -241,6 +241,91 @@ export async function countActiveOwners(tx: Queryable, householdId: UUID): Promi
   return Number(rows[0]?.n ?? 0);
 }
 
+/* ------------------------------------------------------------ invitations */
+
+/**
+ * An invitation, minus its secret.
+ *
+ * `token_hash` is never selected. A screen that lists pending invitations has
+ * no use for it, and a hash that never leaves this file cannot be leaked by a
+ * response body somebody forgot to trim.
+ */
+export interface InvitationSummary {
+  id: UUID;
+  householdId: UUID;
+  role: Role;
+  email: string | null;
+  createdBy: UUID;
+  createdAt: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+}
+
+interface InvitationRow {
+  id: string; household_id: string; role: string; email: string | null;
+  created_by: string; created_at: string; expires_at: string; accepted_at: string | null;
+}
+
+const toInvitation = (r: InvitationRow): InvitationSummary => ({
+  id: r.id, householdId: r.household_id, role: r.role as Role, email: r.email,
+  createdBy: r.created_by, createdAt: new Date(r.created_at).toISOString(),
+  expiresAt: new Date(r.expires_at).toISOString(),
+  acceptedAt: r.accepted_at === null ? null : new Date(r.accepted_at).toISOString(),
+});
+
+/**
+ * Invitations for a household, newest first.
+ *
+ * `pending` filters to the ones that are still a way in — unaccepted and
+ * unexpired — which is the only set anybody can act on. Expiry is compared
+ * against a caller-supplied instant rather than `now()` so the answer matches
+ * the rest of the request; the API tier reads the clock once and threads it.
+ */
+export async function listInvitations(
+  tx: Queryable, householdId: UUID, options: { pending?: boolean; now?: string } = {},
+): Promise<InvitationSummary[]> {
+  const { rows } = await tx.query<InvitationRow>(
+    `select id, household_id, role, email, created_by, created_at, expires_at, accepted_at
+       from invitation
+      where household_id = $1
+        and ($2::boolean is not true or (accepted_at is null and expires_at > $3::timestamptz))
+      order by created_at desc, id asc`,
+    [householdId, options.pending ?? false, options.now ?? new Date(0).toISOString()],
+  );
+  return rows.map(toInvitation);
+}
+
+export async function getInvitation(
+  tx: Queryable, householdId: UUID, invitationId: UUID,
+): Promise<InvitationSummary | null> {
+  const { rows } = await tx.query<InvitationRow>(
+    `select id, household_id, role, email, created_by, created_at, expires_at, accepted_at
+       from invitation where household_id = $1 and id = $2`,
+    [householdId, invitationId],
+  );
+  return rows.length > 0 ? toInvitation(rows[0]!) : null;
+}
+
+/**
+ * Revoke an unaccepted invitation by deleting the row.
+ *
+ * A hard delete, and deliberately: the row IS the credential — while it exists,
+ * whoever holds the matching token can still walk into the household. Marking
+ * it "revoked" and leaving it would keep a live hash in the table, and the
+ * accepted ones are the only invitations with any history worth keeping. The
+ * `accepted_at is null` clause is what makes that distinction unforgettable:
+ * how somebody actually joined can never be erased through this path.
+ */
+export async function deleteInvitation(
+  tx: Queryable, householdId: UUID, invitationId: UUID,
+): Promise<boolean> {
+  const { rowCount } = await tx.query(
+    `delete from invitation where household_id = $1 and id = $2 and accepted_at is null`,
+    [householdId, invitationId],
+  );
+  return rowCount > 0;
+}
+
 /* -------------------------------------------------------------- schedules */
 
 export async function listSchedules(tx: Queryable, householdId: UUID): Promise<Schedule[]> {
@@ -591,6 +676,24 @@ export async function saveReminder(tx: Queryable, reminder: Reminder): Promise<R
   return saved;
 }
 
+/**
+ * Delete a reminder outright.
+ *
+ * Nothing in the schema points at a reminder — no foreign key, no ledger line,
+ * no audit row that would be orphaned — so there is no history here to protect
+ * and nothing to gain from a tombstone. `completed` and `dismissed` already
+ * exist for the reminders that ran their course; this path is for the ones that
+ * should never have been typed, and it leaves nothing behind, including in the
+ * search index.
+ */
+export async function deleteReminder(tx: Queryable, householdId: UUID, id: UUID): Promise<boolean> {
+  const { rowCount } = await tx.query(
+    `delete from reminder where household_id = $1 and id = $2`, [householdId, id],
+  );
+  if (rowCount > 0) await unindexDocument(tx, 'reminder', id);
+  return rowCount > 0;
+}
+
 /* ------------------------------------------------------- personal lists */
 
 export async function listShoppingItems(
@@ -699,6 +802,30 @@ export async function saveErrand(tx: Queryable, errand: Errand): Promise<Errand 
     });
   }
   return saved;
+}
+
+/**
+ * Delete a shopping item, and an errand, outright.
+ *
+ * Same reasoning as `deleteReminder`: both tables are leaves. `removed` and
+ * `cancelled` remain the right answer for "we decided not to buy it" — they
+ * keep the decision visible — while these are for the row that was a mistake.
+ * Keeping a mistake forever is its own kind of dishonesty about the list.
+ */
+export async function deleteShoppingItem(tx: Queryable, householdId: UUID, id: UUID): Promise<boolean> {
+  const { rowCount } = await tx.query(
+    `delete from shopping_item where household_id = $1 and id = $2`, [householdId, id],
+  );
+  if (rowCount > 0) await unindexDocument(tx, 'shopping_item', id);
+  return rowCount > 0;
+}
+
+export async function deleteErrand(tx: Queryable, householdId: UUID, id: UUID): Promise<boolean> {
+  const { rowCount } = await tx.query(
+    `delete from errand where household_id = $1 and id = $2`, [householdId, id],
+  );
+  if (rowCount > 0) await unindexDocument(tx, 'errand', id);
+  return rowCount > 0;
 }
 
 /* ----------------------------------------------------------------- inbox */
@@ -862,6 +989,73 @@ export async function saveEmployee(
   return saved;
 }
 
+/**
+ * Has this employee any history the business would lose by deleting the row?
+ *
+ * Shifts are the ledger of who worked, and `shift.employee_id` is
+ * `on delete set null` — deleting the employee would leave those hours
+ * attributed to nobody, which reads as "an unassigned shift" rather than "the
+ * person who worked it is gone". Swaps carry the same record. Availability and
+ * time-off are the employee's own declarations about the future and cascade
+ * away without costing anyone anything, so they deliberately do NOT count.
+ */
+export async function employeeHasHistory(
+  tx: Queryable, householdId: UUID, businessId: UUID, employeeId: UUID,
+): Promise<boolean> {
+  if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return false;
+  const { rows } = await tx.query<{ n: number }>(
+    `select (
+       (select count(*) from shift where business_id = $1 and employee_id = $2) +
+       (select count(*) from shift_swap
+         where business_id = $1 and (from_employee_id = $2 or to_employee_id = $2))
+     )::int as n`,
+    [businessId, employeeId],
+  );
+  return Number(rows[0]?.n ?? 0) > 0;
+}
+
+/**
+ * Retire an employee who HAS worked: keep the row, stop the scheduling.
+ *
+ * `assignShift` already refuses an inactive employee and `analyzeSchedule`
+ * already reads `active`, so this is the whole of the behaviour change — the
+ * coverage rules were not touched to make removal work. The search document
+ * goes, because a person nobody can be scheduled onto has no business turning
+ * up when you search for somebody to schedule.
+ */
+export async function deactivateEmployee(
+  tx: Queryable, householdId: UUID, businessId: UUID, employeeId: UUID,
+): Promise<Employee | null> {
+  if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return null;
+  const { rows } = await tx.query<EmployeeRow>(
+    `update employee set active = false where business_id = $1 and id = $2 returning *`,
+    [businessId, employeeId],
+  );
+  if (rows.length === 0) return null;
+  await unindexDocument(tx, 'employee', employeeId);
+  return toEmployee(rows[0]!);
+}
+
+/**
+ * Delete an employee who never worked.
+ *
+ * Only ever called once `employeeHasHistory` has said no, so the cascade this
+ * fires reaches nothing but that employee's own availability windows and
+ * time-off requests. This is the path the reported bug actually needed: a test
+ * employee typed in to see what the screen does should be able to leave without
+ * a trace.
+ */
+export async function deleteEmployee(
+  tx: Queryable, householdId: UUID, businessId: UUID, employeeId: UUID,
+): Promise<boolean> {
+  if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return false;
+  const { rowCount } = await tx.query(
+    `delete from employee where business_id = $1 and id = $2`, [businessId, employeeId],
+  );
+  if (rowCount > 0) await unindexDocument(tx, 'employee', employeeId);
+  return rowCount > 0;
+}
+
 export async function listShifts(
   tx: Queryable, householdId: UUID, businessId: UUID, window: { from: string; to: string },
 ): Promise<Shift[]> {
@@ -896,6 +1090,48 @@ export async function saveShift(tx: Queryable, householdId: UUID, shift: Shift):
      shift.status, shift.role ?? null],
   );
   return rows.length > 0 ? toShift(rows[0]!) : null;
+}
+
+/**
+ * One shift, scoped to the household's own business.
+ *
+ * `listShifts` needs a window, and "the shift the user just tapped" has no
+ * window — asking for one would mean guessing a range wide enough to contain
+ * the answer, which is how a delete quietly starts 404ing on old rows.
+ */
+export async function getShift(
+  tx: Queryable, householdId: UUID, businessId: UUID, shiftId: UUID,
+): Promise<Shift | null> {
+  if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return null;
+  const { rows } = await tx.query<ShiftRow>(
+    `select * from shift where business_id = $1 and id = $2`, [businessId, shiftId],
+  );
+  return rows.length > 0 ? toShift(rows[0]!) : null;
+}
+
+/**
+ * Delete a shift that was never published.
+ *
+ * A draft is a plan nobody was told about, so removing it removes nothing an
+ * employee ever saw. A published shift is a promise that was made, and the API
+ * cancels those instead — `cancelled` is already INERT to the staffing engine,
+ * so the coverage the shift was filling reopens either way while the record of
+ * having promised it survives.
+ */
+export async function deleteShift(
+  tx: Queryable, householdId: UUID, businessId: UUID, shiftId: UUID,
+): Promise<boolean> {
+  if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return false;
+  // `shift_swap.shift_id` cascades, so a shift somebody has asked to swap is
+  // left alone here and cancelled instead — losing the request would look, to
+  // the employee who made it, exactly like being ignored.
+  const { rowCount } = await tx.query(
+    `delete from shift
+      where business_id = $1 and id = $2 and status = 'draft'
+        and not exists (select 1 from shift_swap where shift_id = $2)`,
+    [businessId, shiftId],
+  );
+  return rowCount > 0;
 }
 
 export async function listAvailability(
@@ -990,8 +1226,14 @@ export async function saveSwap(tx: Queryable, householdId: UUID, swap: ShiftSwap
 
 export async function listProducts(tx: Queryable, householdId: UUID, businessId: UUID): Promise<Product[]> {
   if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return [];
+  // Archived products are excluded HERE rather than at each call site, because
+  // every reader of this function — the shop screen, low-stock alerts, the
+  // reconcile report, the sale path — means "products we still carry". A
+  // retired product that reappeared in one of them would be a bug found in
+  // production, and the one place it can never happen is the query.
   const { rows } = await tx.query<ProductRow>(
-    `select * from product where business_id = $1 order by sku asc`, [businessId],
+    `select * from product where business_id = $1 and archived_at is null order by sku asc`,
+    [businessId],
   );
   return rows.map(toProduct);
 }
@@ -1033,6 +1275,63 @@ export async function saveProduct(tx: Queryable, householdId: UUID, product: Pro
     businessId: saved.businessId,
   });
   return saved;
+}
+
+/**
+ * Does anything in the ledger point at this product?
+ *
+ * Two different dangers, one question. `sale_item.product_id` is
+ * `on delete restrict`, so a sold product cannot be deleted at all — the
+ * database would raise, and a 500 is a poor way to say "this was sold".
+ * `inventory_movement.product_id` is `on delete cascade`, which is worse: the
+ * delete succeeds and takes every receive, adjustment and shrinkage row with
+ * it, so `reconcileInventory` silently loses the drift it exists to find.
+ */
+export async function productHasHistory(
+  tx: Queryable, householdId: UUID, businessId: UUID, productId: UUID,
+): Promise<boolean> {
+  if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return false;
+  const { rows } = await tx.query<{ n: number }>(
+    `select (
+       (select count(*) from inventory_movement where business_id = $1 and product_id = $2) +
+       (select count(*) from sale_item where product_id = $2)
+     )::int as n`,
+    [businessId, productId],
+  );
+  return Number(rows[0]?.n ?? 0) > 0;
+}
+
+/**
+ * Retire a product that has been stocked or sold (migration 002).
+ *
+ * The row stays so the ledger keeps referring to something real; `listProducts`
+ * stops returning it, and the search document goes, so every screen agrees it
+ * is gone.
+ */
+export async function archiveProduct(
+  tx: Queryable, householdId: UUID, businessId: UUID, productId: UUID, at: string,
+): Promise<Product | null> {
+  if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return null;
+  const { rows } = await tx.query<ProductRow>(
+    `update product set archived_at = coalesce(archived_at, $3)
+      where business_id = $1 and id = $2 returning *`,
+    [businessId, productId, at],
+  );
+  if (rows.length === 0) return null;
+  await unindexDocument(tx, 'product', productId);
+  return toProduct(rows[0]!);
+}
+
+/** Delete a product nothing references. Called only after `productHasHistory`. */
+export async function deleteProduct(
+  tx: Queryable, householdId: UUID, businessId: UUID, productId: UUID,
+): Promise<boolean> {
+  if (!(await assertBusinessInHousehold(tx, householdId, businessId))) return false;
+  const { rowCount } = await tx.query(
+    `delete from product where business_id = $1 and id = $2`, [businessId, productId],
+  );
+  if (rowCount > 0) await unindexDocument(tx, 'product', productId);
+  return rowCount > 0;
 }
 
 export async function insertMovement(

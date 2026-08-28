@@ -24,9 +24,6 @@ async function load(mount, sectionName) {
 }
 
 function nav(active) {
-  // A segmented control rather than four pill buttons in an overflowing row:
-  // the fourth tab used to sit half off the right edge with nothing to say it
-  // was there.
   return h('nav', { class: 'segmented', 'aria-label': 'Shia Baby sections' },
     ...[['overview', 'Overview'], ['staffing', 'Staffing'], ['inventory', 'Inventory'], ['finance', 'Money']].map(([key, label]) => h('a', {
       class: `segmented__item${active === key ? ' segmented__item--active' : ''}`,
@@ -68,7 +65,7 @@ function overview(base) {
     ...employees.slice(0, 8).map((employee) => h('div', { class: 'business-list-row' },
       h('span', { class: 'business-avatar', 'aria-hidden': 'true' }, initials(employee.displayName)),
       h('div', { class: 'business-list-row__main' }, h('strong', {}, employee.displayName), h('span', { class: 'muted tiny' }, `${plural(scheduledHoursFor(base, employee.id), 'scheduled hour')}`)),
-      h('span', { class: 'entry__chevron', 'aria-hidden': 'true' }, '›'),
+      h('a', { class: 'btn btn--quiet', href: '/business/staffing' }, 'Manage'),
     )),
   ) : null;
 
@@ -100,8 +97,6 @@ function overview(base) {
     ...products.slice(0, 8).map((product) => h('p', {}, `${product.name}: ${product.quantityOnHand} on hand`))) : null;
   inventoryPulse?.classList.add('business-inventory-pulse');
 
-  // Nothing set up yet: four zeros and a button was a dead end that did not say
-  // what the first step is.
   if (employees.length === 0 && shifts.length === 0 && products.length === 0) {
     return h('div', { class: 'business-overview' }, hero, empty({
       title: 'Shia Baby is set up and empty',
@@ -148,8 +143,18 @@ function staffing(base, extra, mount) {
     state.can('employee.schedule') && employees.length ? addTimeOff(employees, mount) : null,
     state.can('employee.schedule') ? addShift(base, mount) : null,
     state.can('employee.schedule') && (base.shifts ?? []).length ? publishBox(mount) : null,
-    employees.length ? card('Employees', `${employees.length} active profiles`, ...employees.map((employee) => h('p', {},
-      h('strong', {}, employee.displayName), scheduledHours(base, employee.id) !== null ? ` · ${scheduledHours(base, employee.id)} scheduled hours` : ''))): null,
+    employees.length ? card('Employees', `${employees.length} active profiles`, ...employees.map((employee) => h('div', { class: 'row row--wrap' },
+      h('div', { style: { flex: '1 1 12rem' } },
+        h('strong', {}, employee.displayName),
+        scheduledHours(base, employee.id) !== null ? h('p', { class: 'muted tiny', style: { margin: '.15rem 0 0' } }, `${scheduledHours(base, employee.id)} scheduled hours`) : null,
+      ),
+      state.can('business.manage') ? dangerAction('Remove employee', async () => {
+        if (!confirm(`Remove ${employee.displayName}?\n\nIf they have worked shifts, Michel OS will deactivate them instead of deleting their history.`)) return;
+        const result = await api.del(`/api/households/${state.household.id}/business/employees/${encodeURIComponent(employee.id)}`);
+        toast(result?.outcome === 'deactivated' ? `${employee.displayName} deactivated; shift history kept` : `${employee.displayName} removed`);
+        await load(mount, 'staffing');
+      }) : null,
+    ))) : null,
     availability.length ? card('Weekly availability', `${availability.length} window${availability.length === 1 ? '' : 's'}`,
       ...availability.map((a) => h('p', {}, `${employeeById.get(a.employeeId)?.displayName ?? 'Employee'} · ${weekdayLabel(a.weekday)} ${minuteLabel(a.startMinute)}–${minuteLabel(a.endMinute)} · ${a.available ? 'available' : 'not available'}${a.preferredWeeklyHours === undefined ? '' : ` · prefers ${a.preferredWeeklyHours} hrs/week`}`))) : null,
     timeOff.length ? card('Time off', `${timeOff.length} request${timeOff.length === 1 ? '' : 's'}`,
@@ -158,7 +163,16 @@ function staffing(base, extra, mount) {
     (base.shifts ?? []).length === 0 ? empty({ title: 'No shifts scheduled', body: 'Assign employee work schedules here so coverage is visible alongside family commitments.' })
       : h('div', {}, ...(base.shifts ?? []).map((shift) => {
           const person = shift.employeeId ? employeeById.get(shift.employeeId)?.displayName ?? 'Unknown employee' : 'Unassigned';
-          return card(person, shift.status ?? null, h('p', {}, `${dayShort(shift.startsAt, base.business.timezone)} · ${timeRange(shift.startsAt, shift.endsAt, base.business.timezone)}`), shift.role ? h('p', { style: { color: 'var(--muted)' } }, shift.role) : null);
+          return card(person, statusLabel(shift.status, 'Draft'),
+            h('p', {}, `${dayShort(shift.startsAt, base.business.timezone)} · ${timeRange(shift.startsAt, shift.endsAt, base.business.timezone)}`),
+            shift.role ? h('p', { style: { color: 'var(--muted)' } }, shift.role) : null,
+            state.can('employee.schedule') && shift.status !== 'cancelled' ? dangerAction(shift.status === 'draft' ? 'Remove shift' : 'Cancel shift', async () => {
+              if (!confirm(`${shift.status === 'draft' ? 'Remove' : 'Cancel'} this shift for ${person}?`)) return;
+              const result = await api.del(`/api/households/${state.household.id}/business/shifts/${encodeURIComponent(shift.id)}`);
+              toast(result?.outcome === 'cancelled' ? 'Shift cancelled; history kept' : 'Shift removed');
+              await load(mount, 'staffing');
+            }) : null,
+          );
         })));
 }
 
@@ -215,7 +229,18 @@ function inventory(base, data, mount) {
   const products = data.products ?? base.products ?? []; const low = new Set((data.lowStock ?? []).map((x) => x.productId));
   return h('div', {}, state.can('business.manage') ? addProduct(mount) : null, state.can('business.manage') && products.length ? adjustStock(products, mount) : null,
     products.length === 0 ? empty({ title: 'No inventory yet', body: 'Add products to see stock and low-stock warnings.' }) : h('div', {}, ...products.map((p) => card(p.name, p.sku,
-      h('p', {}, h('strong', {}, `${p.quantityOnHand} on hand`), ` · reorder at ${p.reorderPoint}`), h('p', {}, `Price ${money(p.unitPrice ?? 0)} · Cost ${money(p.unitCost ?? 0)}`), low.has(p.id) ? chip('Low stock', 'alert') : chip('Stock OK', 'good')))));
+      h('p', {}, h('strong', {}, `${p.quantityOnHand} on hand`), ` · reorder at ${p.reorderPoint}`),
+      h('p', {}, `Price ${money(p.unitPrice ?? 0)} · Cost ${money(p.unitCost ?? 0)}`),
+      h('div', { class: 'row row--wrap' },
+        low.has(p.id) ? chip('Low stock', 'alert') : chip('Stock OK', 'good'),
+        state.can('business.manage') ? dangerAction('Remove product', async () => {
+          if (!confirm(`Remove ${p.name}?\n\nIf it has sales or stock history, Michel OS will archive it instead of deleting the ledger.`)) return;
+          const result = await api.del(`/api/households/${state.household.id}/business/products/${encodeURIComponent(p.id)}`);
+          toast(result?.outcome === 'archived' ? `${p.name} archived; history kept` : `${p.name} removed`);
+          await load(mount, 'inventory');
+        }) : null,
+      ),
+    ))));
 }
 
 function addProduct(mount) {
@@ -252,6 +277,15 @@ function recordSaleBox(products, mount) {
 function createBusiness(mount) {
   if (!state.can('household.manage')) return empty({ title: 'Shia Baby is not set up', body: 'A household owner can create the business workspace.' }); const name = input({ value: 'Shia Baby', required: true }); const rate = input({ type: 'number', min: 0, max: 100, step: 0.1, value: 0, required: true });
   return card('Set up Shia Baby', null, h('form', { onSubmit: async (e) => { e.preventDefault(); try { await api.post(`/api/households/${state.household.id}/business`, { name: name.value.trim(), timezone: state.timezone, taxSetAsideRate: Number(rate.value) / 100 }); state.business = { name: name.value.trim() }; toast('Business workspace created'); await load(mount, 'overview'); } catch (error) { toast(error.message ?? 'Could not create business.', 'error'); } } }, field('Business name', name), field('Tax set-aside percentage', rate, { hint: 'An estimate only. Michel OS always shows the disclaimer with the number.' }), h('button', { class: 'btn btn--primary', type: 'submit' }, 'Create workspace')));
+}
+
+function dangerAction(label, fn) {
+  return h('button', { class: 'btn btn--danger', type: 'button', onClick: async (event) => {
+    event.currentTarget.disabled = true;
+    try { await fn(); }
+    catch (error) { toast(error.message ?? 'Could not remove it.', 'error'); }
+    finally { event.currentTarget.disabled = false; }
+  } }, label);
 }
 
 function scheduledHours(base, employeeId) { const value = base.hoursByEmployee?.[employeeId]; return typeof value === 'number' ? Math.round(value * 10) / 10 : null; }

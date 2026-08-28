@@ -61,11 +61,27 @@ git fetch --quiet origin "$BRANCH" || fail "git fetch failed"
 CURRENT="$(git rev-parse HEAD)"
 TARGET="$(git rev-parse "origin/${BRANCH}")"
 
-if [ "$CURRENT" = "$TARGET" ] && [ "$FORCE" -eq 0 ]; then
-  exit 0   # nothing to do; stay quiet so the timer does not spam the journal
+# What is RUNNING, which is not the same question as what is checked out.
+#
+# The first version compared HEAD to origin/main and exited when they matched.
+# That silently did the wrong thing after any manual `git pull`: the checkout
+# had already moved, so the timer saw "nothing to do" while the container went
+# on serving the previous build indefinitely. The git SHA says what is on disk;
+# only this stamp says what was actually built and started.
+STAMP="${REPO_ROOT}/.swarm/deployed-sha"
+DEPLOYED="$(cat "$STAMP" 2>/dev/null || echo none)"
+
+if [ "$DEPLOYED" = "$TARGET" ] && [ "$FORCE" -eq 0 ]; then
+  exit 0   # already running this commit; stay quiet so the timer is not noisy
 fi
 
-log "current  ${CURRENT}"
+if [ "$DEPLOYED" = "none" ]; then
+  log "no deployment stamp yet — treating this as a first deploy"
+elif [ "$DEPLOYED" != "$CURRENT" ]; then
+  log "NOTE: checkout is at ${CURRENT} but the running build is ${DEPLOYED}"
+fi
+
+log "deployed ${DEPLOYED}"
 log "target   ${TARGET}"
 
 # ----------------------------------------------------------- CI gate ---
@@ -77,14 +93,6 @@ check_ci() {
   workflow="${MICHEL_CI_WORKFLOW:-gauntlet.yml}"
   api="https://api.github.com/repos/${slug}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=10"
 
-  # Keyed on the WORKFLOW FILE, not on a check-run name.
-  #
-  # The first version of this matched check runs whose name contained
-  # "gauntlet". A check run is named after the JOB, not the workflow, and this
-  # repository's job is called "Phase E — adversarial review" — so the match
-  # never fired, every commit came back "cannot establish", and auto-deploy
-  # skipped forever while blaming a missing token. The workflow filename is
-  # the thing that is actually stable.
   if [ -n "${GITHUB_TOKEN:-}" ]; then
     body="$(curl -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
       -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null || true)"
@@ -95,13 +103,10 @@ check_ci() {
   [ -n "$body" ] || return 2
   printf '%s' "$body" | grep -q '"total_count": *0' && return 2
 
-  # jq is not guaranteed on a VPS, so pull the conclusions out with sed.
   conclusions="$(printf '%s' "$body" | tr '{},' '\n' \
     | grep -o '"conclusion": *"[^"]*"' | sed 's/.*: *"//; s/"//')"
   [ -n "$conclusions" ] || return 2
 
-  # A single bad conclusion blocks, even if another run of the same workflow
-  # succeeded: a re-run that went green does not un-break the failure.
   if printf '%s\n' "$conclusions" | grep -qE '^(failure|cancelled|timed_out|action_required)$'; then
     return 1
   fi
@@ -142,6 +147,7 @@ if ! michel_compose up -d --build; then
   log "build/start FAILED — rolling back to ${CURRENT}"
   cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
   cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
+  mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$CURRENT" > "$STAMP"
   fail "deploy failed and was rolled back to ${CURRENT}"
 fi
 
@@ -164,7 +170,11 @@ if [ "$healthy" -ne 1 ]; then
   michel_compose logs app --tail 40 || true
   cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
   cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
+  mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$CURRENT" > "$STAMP"
   fail "new build was unhealthy; rolled back to ${CURRENT}"
 fi
+
+mkdir -p "$(dirname "$STAMP")"
+printf '%s\n' "$TARGET" > "$STAMP"
 
 log "DEPLOYED ${TARGET} — healthy at ${HEALTH_URL}"
