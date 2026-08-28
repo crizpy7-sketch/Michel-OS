@@ -29,6 +29,14 @@ function wrap(...children) {
   return h('div', { style: { maxWidth: '26rem', margin: '0 auto', paddingTop: '2rem' } }, ...children);
 }
 
+/** Account setup is not part of the signed-in application navigation. */
+function setAuthChromeHidden(hidden) {
+  for (const selector of ['.tabbar', '.sidenav', '.topbar']) {
+    const node = document.querySelector(selector);
+    if (node) node.hidden = hidden;
+  }
+}
+
 function friendlyInvitationError(error) {
   switch (error?.code) {
     case 'invitation_expired': return 'That invitation expired. Ask the household owner to create a new one.';
@@ -59,6 +67,7 @@ function roleLabel(role) {
 /* ------------------------------------------------------------- sign in */
 
 export function render(mount, { onSignedIn }) {
+  setAuthChromeHidden(true);
   let mode = 'signin';
   let registerPath = 'create';
   let busy = false;
@@ -216,6 +225,7 @@ export function render(mount, { onSignedIn }) {
           } else {
             await registerOrJoin();
           }
+          setAuthChromeHidden(false);
           onSignedIn();
           return;
         } catch (failure) {
@@ -291,6 +301,7 @@ export function render(mount, { onSignedIn }) {
 /* ---------------------------------------------------------- onboarding */
 
 export function renderOnboarding(mount, { onReady }) {
+  setAuthChromeHidden(true);
   const householdName = input({ type: 'text', placeholder: 'The Michels', required: true });
   const timezone = select(timezoneOptions());
   const token = input({ type: 'text', placeholder: 'Invitation code', required: true, autocapitalize: 'none', spellcheck: 'false' });
@@ -307,6 +318,7 @@ export function renderOnboarding(mount, { onReady }) {
           event.preventDefault();
           try {
             await api.post('/api/households', { name: householdName.value, timezone: timezone.value });
+            setAuthChromeHidden(false);
             onReady();
           } catch (error) { toast(error.message, 'error'); }
         },
@@ -323,6 +335,7 @@ export function renderOnboarding(mount, { onReady }) {
           event.preventDefault();
           try {
             await api.post(`/api/invitations/${encodeURIComponent(token.value.trim())}/accept`);
+            setAuthChromeHidden(false);
             onReady();
           } catch (error) { toast(friendlyInvitationError(error), 'error'); }
         },
