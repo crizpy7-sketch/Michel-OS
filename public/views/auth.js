@@ -9,6 +9,7 @@
 
 import { h, render as paint } from '../lib/dom.js';
 import { api } from '../lib/api.js';
+import { rememberHousehold } from '../lib/state.js';
 import { button, card, field, input, select, toast } from '../lib/ui.js';
 
 function timezoneOptions() {
@@ -106,23 +107,27 @@ export function render(mount, { onSignedIn }) {
     }
   }
 
+  /**
+   * Register or accept an invitation and return the household that must become
+   * active. The server has always returned this; the old client discarded it,
+   * then booted into whatever household localStorage remembered from before.
+   */
   async function registerOrJoin() {
     if (registerPath === 'create') {
-      await api.post('/api/auth/register', {
+      return api.post('/api/auth/register', {
         email: draft.email,
         password: draft.password,
         displayName: draft.displayName,
         householdName: draft.householdName,
         timezone: draft.timezone,
       });
-      return;
     }
 
     if (!(await previewInvitation())) throw error;
 
     const token = draft.joinToken.trim();
     try {
-      await api.post('/api/auth/register', {
+      return await api.post('/api/auth/register', {
         email: draft.email,
         password: draft.password,
         displayName: draft.displayName,
@@ -132,11 +137,12 @@ export function render(mount, { onSignedIn }) {
       if (failure?.code !== 'email_taken') throw failure;
 
       // The invitation may be going to somebody who already made an account in
-      // an earlier attempt. Do not force them through an undocumented second
-      // flow: authenticate that existing account, then accept the invitation.
+      // an earlier attempt. Authenticate that existing account, accept the
+      // invitation, and explicitly return the household that was just joined.
       try {
-        await api.post('/api/auth/login', { email: draft.email, password: draft.password });
-        await api.post(`/api/invitations/${encodeURIComponent(token)}/accept`, {});
+        const loginResult = await api.post('/api/auth/login', { email: draft.email, password: draft.password });
+        const accepted = await api.post(`/api/invitations/${encodeURIComponent(token)}/accept`, {});
+        return { user: loginResult.user, household: accepted.household, member: accepted.member };
       } catch (existingFailure) {
         // login() has already set a session cookie if authentication succeeded;
         // clear it when invitation acceptance fails so the form is not secretly
@@ -221,9 +227,15 @@ export function render(mount, { onSignedIn }) {
 
         try {
           if (mode === 'signin') {
-            await api.post('/api/auth/login', { email: draft.email, password: draft.password });
+            const signedIn = await api.post('/api/auth/login', { email: draft.email, password: draft.password });
+            // A one-household account has no ambiguity. Remember it per user so
+            // another account tested on this same phone cannot overwrite it.
+            if (signedIn.households?.length === 1) {
+              rememberHousehold(signedIn.households[0].household.id, signedIn.user?.id);
+            }
           } else {
-            await registerOrJoin();
+            const result = await registerOrJoin();
+            if (result?.household?.id) rememberHousehold(result.household.id, result.user?.id);
           }
           setAuthChromeHidden(false);
           onSignedIn();
@@ -317,7 +329,8 @@ export function renderOnboarding(mount, { onReady }) {
         onSubmit: async (event) => {
           event.preventDefault();
           try {
-            await api.post('/api/households', { name: householdName.value, timezone: timezone.value });
+            const created = await api.post('/api/households', { name: householdName.value, timezone: timezone.value });
+            if (created?.household?.id) rememberHousehold(created.household.id);
             setAuthChromeHidden(false);
             onReady();
           } catch (error) { toast(error.message, 'error'); }
@@ -334,7 +347,8 @@ export function renderOnboarding(mount, { onReady }) {
         onSubmit: async (event) => {
           event.preventDefault();
           try {
-            await api.post(`/api/invitations/${encodeURIComponent(token.value.trim())}/accept`);
+            const accepted = await api.post(`/api/invitations/${encodeURIComponent(token.value.trim())}/accept`);
+            if (accepted?.household?.id) rememberHousehold(accepted.household.id);
             setAuthChromeHidden(false);
             onReady();
           } catch (error) { toast(friendlyInvitationError(error), 'error'); }

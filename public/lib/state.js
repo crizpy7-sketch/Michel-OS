@@ -2,7 +2,7 @@
  * Session state (Agent L).
  *
  * One module holds who is signed in, which household is active, and the roster.
- * Views read it; only `refresh()` and `setHousehold()` write it.
+ * Views read it; only `refresh()` and `loadHousehold()` write it.
  *
  * The important rule here is the one about permissions. `state.can()` exists
  * for AFFORDANCES only — whether to render the "Add" button, whether to show
@@ -16,7 +16,12 @@
 
 import { api } from './api.js';
 
-const LAST_HOUSEHOLD = 'michel.household';
+const LEGACY_LAST_HOUSEHOLD = 'michel.household';
+const LAST_HOUSEHOLD_PREFIX = 'michel.household.';
+
+function householdStorageKey(userId) {
+  return `${LAST_HOUSEHOLD_PREFIX}${userId}`;
+}
 
 export const state = {
   user: null,
@@ -63,6 +68,19 @@ const ROLE_MATRIX = {
 };
 
 /**
+ * Persist the active household for this account.
+ *
+ * The old app used one global localStorage key. That meant two accounts using
+ * the same browser — or one account that briefly created the wrong household
+ * before accepting an invitation — could reopen the wrong calendar even though
+ * the invitation itself had succeeded. Household memory is now scoped by user.
+ */
+export function rememberHousehold(householdId, userId = state.user?.id) {
+  if (userId) safeWrite(householdStorageKey(userId), householdId);
+  else safeWrite(LEGACY_LAST_HOUSEHOLD, householdId);
+}
+
+/**
  * Load the signed-in user and the active household.
  *
  * Returns `false` when nobody is signed in, so the caller shows the sign-in
@@ -86,11 +104,11 @@ export async function refresh() {
     return true;
   }
 
-  // The last household used, if it is still one this person belongs to. The
-  // membership check matters: a stale id from before somebody left a household
-  // would otherwise ask the server for a household it will answer 404 for, and
-  // the app would look broken rather than just picking the other one.
-  const remembered = safeRead(LAST_HOUSEHOLD);
+  // Remember a household per account. Fall back once to the legacy global key
+  // so existing installations keep their selection, then loadHousehold()
+  // migrates that choice into the account-scoped key.
+  const remembered = safeRead(householdStorageKey(state.user.id))
+    ?? safeRead(LEGACY_LAST_HOUSEHOLD);
   const chosen = state.households.find((entry) => entry.household.id === remembered)
     ?? state.households[0];
 
@@ -105,7 +123,7 @@ export async function loadHousehold(householdId) {
   state.members = detail.members ?? [];
   state.business = detail.business ?? null;
   state.permissions = new Set(ROLE_MATRIX[detail.member?.role] ?? []);
-  safeWrite(LAST_HOUSEHOLD, householdId);
+  rememberHousehold(householdId);
   return detail;
 }
 

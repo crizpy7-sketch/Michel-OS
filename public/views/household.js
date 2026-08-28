@@ -16,13 +16,45 @@ async function load(mount) {
     const members = data.members ?? [];
     const activeCount = members.filter((member) => member.active !== false).length;
     return h('div', {},
+      state.households.length > 1 ? householdSwitcher(mount) : null,
       card(data.household.name, data.household.timezone,
-        h('p', { style: { color: 'var(--muted)' } }, `${activeCount} active family profile${activeCount === 1 ? '' : 's'}`)),
+        h('p', { style: { color: 'var(--muted)' } }, `${activeCount} active family profile${activeCount === 1 ? '' : 's'}`),
+        h('p', { class: 'muted tiny', style: { marginTop: '.5rem' } }, 'Appointments, reminders and schedules are shared only with people viewing this same household.')),
       state.can('member.manage') ? addMember(mount) : null,
       h('div', { style: { marginTop: '1rem' } }, ...members.map((member) => memberCard(member, mount))),
       state.can('member.manage') ? inviteBox(mount, invitations) : null,
     );
   });
+}
+
+function householdSwitcher(mount) {
+  const options = state.households.map((entry) => [entry.household.id, entry.household.name]);
+  const picker = select(options, { 'aria-label': 'Household being viewed' });
+  picker.value = state.household.id;
+
+  return card('Which household are you viewing?', `${state.households.length} memberships`,
+    h('p', { class: 'muted' },
+      'This account belongs to more than one household. Both phones must be on the same household to see the same appointments and schedule.'),
+    field('Current household', picker),
+    h('button', {
+      class: 'btn btn--primary',
+      type: 'button',
+      onClick: async (event) => {
+        if (picker.value === state.household.id) {
+          toast(`Already viewing ${state.household.name}`);
+          return;
+        }
+        event.currentTarget.disabled = true;
+        try {
+          await loadHousehold(picker.value);
+          toast(`Now viewing ${state.household.name}`);
+          await load(mount);
+        } catch (error) {
+          toast(error.message ?? 'Could not switch households.', 'error');
+          event.currentTarget.disabled = false;
+        }
+      },
+    }, 'Switch household'));
 }
 
 function memberCard(member, mount) {
@@ -126,7 +158,7 @@ function inviteCode(token) {
   return h('div', { class: 'invite-code' },
     h('p', { class: 'invite-code__value' }, token),
     h('p', { class: 'muted tiny' },
-      'Send this to them, then have them open the app, choose Create account, and paste it into "Invitation code". They pick their own password.'),
+      'Send this to them, then have them open the app, choose Create account → Join household, check the invitation, and join. The shared household becomes active automatically.'),
     copy,
   );
 }
