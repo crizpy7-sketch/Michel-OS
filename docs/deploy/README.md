@@ -111,6 +111,13 @@ This reconciliation proves release identity; it does not prove that a database
 backup can be restored. Recovery still requires a separately observed restore
 drill and the production acceptance checks below.
 
+The existing GitHub Actions gauntlet also builds the real image for the exact
+candidate and starts disposable PostgreSQL and Michel OS containers inside the
+runner. It verifies the OCI labels, minimal readiness response, positive
+reconciliation, and an intentional mismatch rejection, then retains a
+machine-readable `release-provenance-ci.json` artifact. That artifact is CI and
+ephemeral-runtime evidence only; it is never production deployment evidence.
+
 ## Standalone first deployment
 
 Prerequisites on the VPS: Git, Docker Engine, and Docker Compose v2. Point a DNS A/AAAA record for your chosen hostname at the VPS before starting Caddy.

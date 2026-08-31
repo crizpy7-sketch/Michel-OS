@@ -194,3 +194,18 @@ test('auto-deploy reconciles target, readiness and image before its only success
   assert.doesNotMatch(source, /printf '%s\\n' "\$TARGET" > "\$STAMP"/);
   assert.match(source, /candidate was not stamped as deployed/);
 });
+
+test('the existing gauntlet runs exact-candidate Docker and ephemeral-runtime provenance checks', async () => {
+  const workflow = await readFile(resolve('.github/workflows/gauntlet.yml'), 'utf8');
+  const verifier = await readFile(resolve('docs/deploy/verify-release-provenance-ci.sh'), 'utf8');
+  assert.match(workflow, /ref: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(workflow, /MICHEL_CANDIDATE_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
+  assert.match(workflow, /sh docs\/deploy\/verify-release-provenance-ci\.sh/);
+  assert.match(workflow, /release-provenance-ci\.json/);
+  assert.match(verifier, /docker build/);
+  assert.match(verifier, /postgres:16-alpine/);
+  assert.match(verifier, /\/api\/ready/);
+  assert.match(verifier, /michel_reconcile_release "\$CANDIDATE" "\$READY_RELEASE_SHA" "\$RUNNING_OCI_REVISION"/);
+  assert.match(verifier, /negative reconciliation accepted an intentionally mismatched SHA/);
+  assert.match(verifier, /productionDeploymentObservation/);
+});
