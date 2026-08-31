@@ -53,3 +53,54 @@ michel_owns_port() {
     --format '{{.Ports}}' 2>/dev/null \
     | grep -q ":${port}->"
 }
+
+# Print a canonical lowercase exact Git SHA, or fail without output. Branches,
+# tags, prefixes and descriptive strings are not release provenance.
+michel_normalize_release_sha() {
+  value="$1"
+  printf '%s' "$value" | grep -Eq '^[0-9a-fA-F]{40}$' || return 1
+  printf '%s' "$value" | tr 'A-F' 'a-f'
+}
+
+# Extract only the small machine field owned by Michel OS. A healthy HTTP
+# response without this exact field remains useful for uptime checks, but is
+# insufficient for release verification.
+michel_readiness_release_sha() {
+  printf '%s' "$1" | tr -d '\r\n' \
+    | grep -Eq '"ready"[[:space:]]*:[[:space:]]*true' || return 1
+  value="$(printf '%s' "$1" | tr -d '\r\n' \
+    | sed -n 's/.*"releaseSha"[[:space:]]*:[[:space:]]*"\([0-9a-fA-F]\{40\}\)".*/\1/p')"
+  [ -n "$value" ] || return 1
+  michel_normalize_release_sha "$value"
+}
+
+# Resolve the revision label from the image backing the running Compose app.
+michel_running_image_revision() {
+  container="$(michel_compose ps -q app 2>/dev/null)"
+  [ -n "$container" ] || return 1
+  value="$(docker inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$container" 2>/dev/null)"
+  michel_normalize_release_sha "$value"
+}
+
+# Production may be stamped only when the target, readiness response and
+# running image independently name the same exact commit.
+michel_reconcile_release() {
+  target="$(michel_normalize_release_sha "$1")" || return 1
+  ready="$(michel_normalize_release_sha "$2")" || return 1
+  image="$(michel_normalize_release_sha "$3")" || return 1
+  [ "$target" = "$ready" ] && [ "$target" = "$image" ]
+}
+
+# Guard the only successful deployed-sha write. On mismatch the pre-existing
+# stamp is preserved, so a failed candidate cannot claim deployment success.
+michel_write_deployed_stamp() {
+  target="$1"
+  ready="$2"
+  image="$3"
+  stamp="$4"
+  michel_reconcile_release "$target" "$ready" "$image" || return 1
+  mkdir -p "$(dirname "$stamp")"
+  temporary="${stamp}.tmp.$$"
+  printf '%s\n' "$(michel_normalize_release_sha "$target")" > "$temporary"
+  mv "$temporary" "$stamp"
+}

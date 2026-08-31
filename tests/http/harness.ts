@@ -52,8 +52,17 @@ export interface Response_<T> {
   setCookie: string | undefined;
 }
 
-export async function startHarness(options: { now?: string } = {}): Promise<Harness> {
-  const db = await createTestDb();
+export async function startHarness(options: { now?: string; releaseSha?: string; readinessDbFailure?: boolean } = {}): Promise<Harness> {
+  const backingDb = await createTestDb();
+  const db: Db = options.readinessDbFailure === true ? {
+    async query<T>(sql: string, params?: readonly unknown[]) {
+      if (sql.trim().toLowerCase() === 'select 1') throw new Error('simulated readiness database failure');
+      return backingDb.query<T>(sql, params);
+    },
+    exec: (sql) => backingDb.exec(sql),
+    transaction: (fn) => backingDb.transaction(fn),
+    close: () => backingDb.close(),
+  } : backingDb;
 
   let current = options.now ?? '2026-09-07T12:00:00.000Z';
 
@@ -66,6 +75,7 @@ export async function startHarness(options: { now?: string } = {}): Promise<Harn
     ALLOW_INSECURE: 'true',
     PORT: '3000',
     PUBLIC_DIR: new URL('../fixtures/public/', import.meta.url).pathname,
+    ...(options.releaseSha === undefined ? {} : { MICHEL_RELEASE_SHA: options.releaseSha }),
   } as NodeJS.ProcessEnv);
 
   const server = createHttpServer({ config, db, now: () => current });

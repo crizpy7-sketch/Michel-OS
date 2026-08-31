@@ -61,6 +61,9 @@ git fetch --quiet origin "$BRANCH" || fail "git fetch failed"
 CURRENT="$(git rev-parse HEAD)"
 TARGET="$(git rev-parse "origin/${BRANCH}")"
 
+michel_normalize_release_sha "$TARGET" >/dev/null \
+  || fail "target is not an exact 40-character Git SHA: ${TARGET}"
+
 # What is RUNNING, which is not the same question as what is checked out.
 #
 # The first version compared HEAD to origin/main and exited when they matched.
@@ -143,11 +146,12 @@ git checkout --quiet --detach "$TARGET" || fail "checkout failed"
 
 cd "$REPO_ROOT/docs/deploy"
 log "building and starting"
+export MICHEL_RELEASE_SHA="$TARGET"
 if ! michel_compose up -d --build; then
   log "build/start FAILED — rolling back to ${CURRENT}"
   cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
+  export MICHEL_RELEASE_SHA="$CURRENT"
   cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
-  mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$CURRENT" > "$STAMP"
   fail "deploy failed and was rolled back to ${CURRENT}"
 fi
 
@@ -155,9 +159,11 @@ fi
 
 log "waiting for health"
 healthy=0
+READY_BODY=""
 i=0
 while [ "$i" -lt 30 ]; do
-  if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+  if response="$(curl -fsS --max-time 3 "$HEALTH_URL" 2>/dev/null)"; then
+    READY_BODY="$response"
     healthy=1
     break
   fi
@@ -169,12 +175,26 @@ if [ "$healthy" -ne 1 ]; then
   log "health check FAILED after 60s — rolling back to ${CURRENT}"
   michel_compose logs app --tail 40 || true
   cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
+  export MICHEL_RELEASE_SHA="$CURRENT"
   cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
-  mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$CURRENT" > "$STAMP"
   fail "new build was unhealthy; rolled back to ${CURRENT}"
 fi
 
-mkdir -p "$(dirname "$STAMP")"
-printf '%s\n' "$TARGET" > "$STAMP"
+# ------------------------------------------ exact release reconciliation ---
+
+READY_RELEASE_SHA="$(michel_readiness_release_sha "$READY_BODY" || true)"
+IMAGE_RELEASE_SHA="$(michel_running_image_revision || true)"
+
+if ! michel_reconcile_release "$TARGET" "$READY_RELEASE_SHA" "$IMAGE_RELEASE_SHA"; then
+  log "release provenance FAILED — target=${TARGET} readiness=${READY_RELEASE_SHA:-missing} image=${IMAGE_RELEASE_SHA:-missing}"
+  log "rolling back to ${CURRENT}; preserving the previous deployed-sha stamp"
+  cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
+  export MICHEL_RELEASE_SHA="$CURRENT"
+  cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
+  fail "release provenance mismatch; candidate was not stamped as deployed"
+fi
+
+michel_write_deployed_stamp "$TARGET" "$READY_RELEASE_SHA" "$IMAGE_RELEASE_SHA" "$STAMP" \
+  || fail "release provenance changed before the deployed-sha stamp could be written"
 
 log "DEPLOYED ${TARGET} — healthy at ${HEALTH_URL}"

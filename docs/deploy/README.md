@@ -24,6 +24,7 @@ cd docs/deploy
 cp .env.example .env
 # edit Michel-specific settings and secrets
 
+MICHEL_RELEASE_SHA="$(git -C ../.. rev-parse HEAD)" \
 docker compose --project-name michel-os \
   --env-file .env \
   -f compose.shared-vps.yml \
@@ -48,9 +49,13 @@ That installs a systemd timer which every 3 minutes:
 1. checks `origin/main` for a new commit — exits silently when there is none;
 2. **refuses to deploy unless that commit's `gauntlet` workflow passed**;
 3. backs up the database, and aborts if the backup is not a real dump;
-4. checks out the commit, rebuilds, and restarts;
-5. polls `/api/ready` for 60 seconds, and **rolls back to the previous commit**
-   if the new build never comes up healthy.
+4. checks out the exact target commit and supplies that 40-character SHA as the
+   Docker build and runtime release identity;
+5. rebuilds, restarts, and polls `/api/ready` for 60 seconds;
+6. reconciles the target Git SHA, `/api/ready` release SHA, and running image's
+   OCI revision label, and **rolls back to the previous commit** if health or
+   provenance does not match;
+7. writes `.swarm/deployed-sha` only after all three identities agree.
 
 ```sh
 journalctl -u michel-auto-deploy -f                    # watch it work
@@ -80,7 +85,31 @@ the deploy can read commit status; without one it skips rather than guesses.
 - **Backs up before every deploy**, and treats a suspiciously small dump as a
   failure rather than keeping a useless file.
 - **Rolls back automatically** on a failed build or a failed health check.
+- **Fails closed on release-provenance mismatch** and leaves the previous
+  successful deployment stamp intact.
 - **Never touches anything outside its own compose project.**
+
+## Exact release provenance
+
+The deployment identity has one source: the exact Git candidate selected by the
+deployment controller. The controller supplies it as `MICHEL_RELEASE_SHA` to the
+Docker build; it is not discovered from Git inside the container. The build
+validates the value as exactly 40 hexadecimal characters, records it as the
+`org.opencontainers.image.revision` OCI label, and embeds the same non-secret
+value for the application runtime. A database-ready app then reports:
+
+```json
+{"ready":true,"releaseSha":"<exact-40-character-git-sha>"}
+```
+
+The automatic deployer compares that response and the running image label to
+the target before updating `.swarm/deployed-sha`. Missing, malformed, stale, or
+conflicting provenance fails the deployment. The source label is the stable
+repository identifier `https://github.com/crizpy7-sketch/Michel-OS`.
+
+This reconciliation proves release identity; it does not prove that a database
+backup can be restored. Recovery still requires a separately observed restore
+drill and the production acceptance checks below.
 
 ## Standalone first deployment
 
@@ -106,7 +135,8 @@ If `OPENAI_API_KEY` is blank, Michel OS stays fully usable and the Assistant fal
 Then:
 
 ```sh
-docker compose --env-file .env up -d --build
+MICHEL_RELEASE_SHA="$(git -C ../.. rev-parse HEAD)" \
+  docker compose --env-file .env up -d --build
 docker compose --env-file .env ps
 curl -fsS "${BASE_URL:-https://your-domain.example}/api/ready"
 ```
@@ -122,7 +152,8 @@ cd Michel-OS
 git pull --ff-only
 cd docs/deploy
 ./backup.sh
-docker compose --env-file .env up -d --build
+MICHEL_RELEASE_SHA="$(git -C ../.. rev-parse HEAD)" \
+  docker compose --env-file .env up -d --build
 docker compose --env-file .env ps
 ```
 
@@ -133,7 +164,8 @@ cd /opt/michel-os
 git pull --ff-only
 cd docs/deploy
 ./backup.sh
-docker compose --project-name michel-os --env-file .env -f compose.shared-vps.yml up -d --build
+MICHEL_RELEASE_SHA="$(git -C ../.. rev-parse HEAD)" \
+  docker compose --project-name michel-os --env-file .env -f compose.shared-vps.yml up -d --build
 docker compose --project-name michel-os --env-file .env -f compose.shared-vps.yml ps
 ```
 
@@ -169,7 +201,9 @@ Run a restore drill on a non-production copy before relying on the backup policy
 ## Production verification checklist
 
 1. The selected Michel compose project shows its services healthy/running.
-2. `/api/ready` returns HTTP 200 from the intended private/public path.
+2. `/api/ready` returns HTTP 200 from the intended private/public path and its
+   `releaseSha` matches both the selected Git candidate and the running image's
+   `org.opencontainers.image.revision` label.
 3. Register/login works over HTTPS and the session survives a reload.
 4. Create an appointment, recurring practice, reminder, shopping item, and errand; reload and confirm persistence.
 5. In Assistant, ask to add a shopping item; confirm a low-confidence proposal once, then verify a second execution attempt is rejected rather than duplicated.
