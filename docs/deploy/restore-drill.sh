@@ -45,7 +45,10 @@ docker run -d --name "$CONTAINER" --network "$NETWORK" \
   -e "POSTGRES_PASSWORD=${DB_PASSWORD}" postgres:16-alpine >/dev/null
 
 i=0
-until docker exec "$CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME" >/dev/null 2>&1; do
+# pg_isready proves the server socket accepts connections, not that the named
+# database has finished creation. Require a real query against the target.
+until docker exec "$CONTAINER" psql -v ON_ERROR_STOP=1 -At -U "$DB_USER" -d "$DB_NAME" \
+  -c 'select 1' 2>/dev/null | grep -qx 1; do
   i=$((i + 1)); [ "$i" -lt 30 ] || { echo "Disposable PostgreSQL did not become ready" >&2; exit 1; }
   sleep 1
 done

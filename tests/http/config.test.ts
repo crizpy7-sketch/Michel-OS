@@ -234,6 +234,7 @@ test('restore drill is isolated, fail-closed and emits bounded evidence', async 
   const dockerCreate = source.indexOf('docker network create');
   assert.ok(integrity >= 0 && dockerCreate > integrity, 'Docker was touched before gzip integrity passed');
   assert.match(source, /postgres:16-alpine/);
+  assert.match(source, /until docker exec "\$CONTAINER" psql/);
   assert.match(source, /schema_migration/);
   assert.match(source, /productionDatabaseAccessed:false/);
   assert.match(source, /docker volume rm -f/);
