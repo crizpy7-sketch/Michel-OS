@@ -114,9 +114,14 @@ drill and the production acceptance checks below.
 The existing GitHub Actions gauntlet also builds the real image for the exact
 candidate and starts disposable PostgreSQL and Michel OS containers inside the
 runner. It verifies the OCI labels, minimal readiness response, positive
-reconciliation, and an intentional mismatch rejection, then retains a
-machine-readable `release-provenance-ci.json` artifact. That artifact is CI and
-ephemeral-runtime evidence only; it is never production deployment evidence.
+reconciliation, and an intentional mismatch rejection. It then creates a real
+logical backup, restores that backup into a second isolated PostgreSQL 16
+instance, rejects a corrupt backup, simulates the guarded rollback stamp, and
+compares the affected readiness path with the exact pre-change baseline on the
+same runner. Candidate-bound JSON receipts and SHA-256 digests are retained.
+These are code/CI, ephemeral-runtime, restore-drill, rollback-simulation and
+performance-smoke evidence only; none is production restore or deployment
+evidence.
 
 ## Standalone first deployment
 
@@ -204,6 +209,36 @@ cd docs/deploy
 ```
 
 Run a restore drill on a non-production copy before relying on the backup policy.
+
+For the bounded disposable drill, which cannot address the Compose database:
+
+```sh
+./restore-drill.sh backups/michel-YYYYMMDDTHHMMSSZ.sql.gz
+```
+
+It verifies gzip integrity, restores into a newly created private Docker
+network/container/volume using `postgres:16-alpine`, checks queryability,
+migration records and core Michel tables, writes a secret-free machine receipt,
+then removes every temporary Docker resource. A passing drill proves that copy
+was restorable in that environment; it is not production recovery proof.
+
+## Manual rollback
+
+A future approved operator rollback requires an exact commit that exists in the
+local repository and an explicit matching confirmation:
+
+```sh
+MICHEL_ROLLBACK_CONFIRM=<40-char-sha> \
+  ./manual-rollback.sh --rollback-to <40-char-sha>
+```
+
+The script backs up before checkout, injects that SHA into build/runtime, waits
+for database-backed readiness, reconciles `/api/ready.releaseSha` with the
+running OCI revision, and changes `.swarm/deployed-sha` only after all checks
+pass. Failure rebuilds the previous checkout without stamping success. It must
+still be run only with the required production approval and observed rollback/
+backup preconditions; the CI simulation does not authorize or prove a live
+rollback.
 
 ## Production verification checklist
 

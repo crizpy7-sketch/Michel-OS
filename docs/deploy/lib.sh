@@ -62,6 +62,18 @@ michel_normalize_release_sha() {
   printf '%s' "$value" | tr 'A-F' 'a-f'
 }
 
+# Require an exact commit that is actually present in the selected repository.
+# This rejects abbreviated SHAs, refs and exact-looking objects that are not
+# commits. It is shared by manual rollback and its CI simulation.
+michel_require_git_commit() {
+  repository="$1"
+  requested="$(michel_normalize_release_sha "$2")" || return 1
+  resolved="$(git -C "$repository" rev-parse --verify "${requested}^{commit}" 2>/dev/null)" || return 1
+  resolved="$(michel_normalize_release_sha "$resolved")" || return 1
+  [ "$requested" = "$resolved" ] || return 1
+  printf '%s' "$resolved"
+}
+
 # Extract only the small machine field owned by Michel OS. A healthy HTTP
 # response without this exact field remains useful for uptime checks, but is
 # insufficient for release verification.

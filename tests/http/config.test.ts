@@ -202,10 +202,63 @@ test('the existing gauntlet runs exact-candidate Docker and ephemeral-runtime pr
   assert.match(workflow, /MICHEL_CANDIDATE_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/);
   assert.match(workflow, /sh docs\/deploy\/verify-release-provenance-ci\.sh/);
   assert.match(workflow, /release-provenance-ci\.json/);
+  assert.match(workflow, /fetch-depth: 0/);
+  assert.match(workflow, /restore-drill-ci\.json/);
+  assert.match(workflow, /rollback-simulation-ci\.json/);
+  assert.match(workflow, /performance-smoke-ci\.json/);
   assert.match(verifier, /docker build/);
   assert.match(verifier, /postgres:16-alpine/);
   assert.match(verifier, /\/api\/ready/);
   assert.match(verifier, /michel_reconcile_release "\$CANDIDATE" "\$READY_RELEASE_SHA" "\$RUNNING_OCI_REVISION"/);
   assert.match(verifier, /negative reconciliation accepted an intentionally mismatched SHA/);
   assert.match(verifier, /productionDeploymentObservation/);
+});
+
+test('rollback identity requires an exact commit that exists in Git', () => {
+  const head = shell('git -C "$1" rev-parse HEAD', resolve('.'));
+  assert.equal(head.status, 0, head.stderr);
+  const accepted = shell('. "$1"; michel_require_git_commit "$2" "$3"', deployLib, resolve('.'), head.stdout);
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.equal(accepted.stdout, head.stdout.trim().toLowerCase());
+  const blob = shell('git -C "$1" hash-object package.json', resolve('.'));
+  assert.equal(blob.status, 0, blob.stderr);
+  for (const invalid of ['main', head.stdout.slice(0, 12), blob.stdout.trim()]) {
+    const rejected = shell('. "$1"; michel_require_git_commit "$2" "$3"', deployLib, resolve('.'), invalid);
+    assert.notEqual(rejected.status, 0, `accepted unavailable rollback identity ${invalid}`);
+  }
+});
+
+test('restore drill is isolated, fail-closed and emits bounded evidence', async () => {
+  const source = await readFile(resolve('docs/deploy/restore-drill.sh'), 'utf8');
+  const integrity = source.indexOf('gzip -t "$BACKUP"');
+  const dockerCreate = source.indexOf('docker network create');
+  assert.ok(integrity >= 0 && dockerCreate > integrity, 'Docker was touched before gzip integrity passed');
+  assert.match(source, /postgres:16-alpine/);
+  assert.match(source, /schema_migration/);
+  assert.match(source, /productionDatabaseAccessed:false/);
+  assert.match(source, /docker volume rm -f/);
+  assert.doesNotMatch(source, /michel_load_env|michel_compose/);
+});
+
+test('manual rollback backs up and reconciles before the guarded deployment stamp', async () => {
+  const source = await readFile(resolve('docs/deploy/manual-rollback.sh'), 'utf8');
+  const backup = source.indexOf('sh ./backup.sh');
+  const checkout = source.indexOf('checkout --quiet --detach "$ROLLBACK"');
+  const reconcile = source.indexOf('michel_reconcile_release "$ROLLBACK"');
+  const stamp = source.indexOf('michel_write_deployed_stamp "$ROLLBACK"');
+  assert.ok(backup >= 0 && checkout > backup, 'rollback checkout preceded its backup');
+  assert.ok(reconcile > checkout && stamp > reconcile, 'rollback stamp was not provenance-gated');
+  assert.match(source, /MICHEL_ROLLBACK_CONFIRM/);
+  assert.match(source, /without stamping/);
+});
+
+test('CI proves restore rejection, rollback stamp safety and bounded performance', async () => {
+  const source = await readFile(resolve('docs/deploy/verify-release-provenance-ci.sh'), 'utf8');
+  assert.match(source, /pg_dump --clean --if-exists/);
+  assert.match(source, /restore-drill\.sh/);
+  assert.match(source, /corrupt backup was accepted/);
+  assert.match(source, /failed rollback changed the previous stamp/);
+  assert.match(source, /git archive "\$BASELINE"/);
+  assert.match(source, /candidate median <= max\(baseline median \* 5, baseline median \+ 25ms\)/);
+  assert.match(source, /productionRollback:false/);
 });
