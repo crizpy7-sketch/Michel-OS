@@ -95,6 +95,7 @@ Edit `.env` with a Michel-specific database password and hostname. Do not copy M
 Then start only the Michel services:
 
 ```sh
+MICHEL_RELEASE_SHA="$(git -C ../.. rev-parse HEAD)" \
 docker compose --project-name michel-os \
   --env-file .env \
   -f compose.shared-vps.yml \
@@ -138,7 +139,9 @@ A shared-VPS release is verified only after all of the following are observed on
 1. MarketSwarm is healthy before deployment.
 2. Port selected for Michel OS is free and loopback-only.
 3. Michel PostgreSQL is healthy in its own Docker volume.
-4. `http://127.0.0.1:<MICHEL_BIND_PORT>/api/ready` returns 200.
+4. `http://127.0.0.1:<MICHEL_BIND_PORT>/api/ready` returns 200 and its exact
+   `releaseSha` agrees with the selected Git candidate and the running image's
+   `org.opencontainers.image.revision` label.
 5. The public Michel hostname works over HTTPS through the existing reverse proxy.
 6. Michel registration/login and persistence work after a container restart.
 7. MarketSwarm remains healthy and its existing data directory is unchanged.

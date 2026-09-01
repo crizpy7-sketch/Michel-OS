@@ -12,13 +12,12 @@
 # surface bought for a few seconds of latency. Nothing here leaves the VPS and
 # nothing needs to reach it, so a leaked repo secret cannot touch the host.
 #
-# THE GATE THAT MATTERS:
+# THE GATES THAT MATTER:
 #
-# It refuses to deploy a commit whose `gauntlet` workflow did not pass. Without
-# that, "push to main" means "any broken commit takes the family calendar down
-# automatically", which is worse than deploying by hand. Set GITHUB_TOKEN in
-# .env for private repos; without a token the public API is used and the deploy
-# is skipped when the status cannot be established.
+# It refuses to deploy without Cristian's one-shot exact-SHA local receipt AND
+# a passing `gauntlet` workflow. CI proves code; it never authorizes production.
+# Set GITHUB_TOKEN in .env for private repos; without a token the public API is
+# used and deployment is skipped when status cannot be established.
 #
 # Install:  sh docs/deploy/install-auto-deploy.sh
 # Logs:     journalctl -u michel-auto-deploy -f
@@ -61,6 +60,9 @@ git fetch --quiet origin "$BRANCH" || fail "git fetch failed"
 CURRENT="$(git rev-parse HEAD)"
 TARGET="$(git rev-parse "origin/${BRANCH}")"
 
+michel_normalize_release_sha "$TARGET" >/dev/null \
+  || fail "target is not an exact 40-character Git SHA: ${TARGET}"
+
 # What is RUNNING, which is not the same question as what is checked out.
 #
 # The first version compared HEAD to origin/main and exited when they matched.
@@ -69,6 +71,9 @@ TARGET="$(git rev-parse "origin/${BRANCH}")"
 # on serving the previous build indefinitely. The git SHA says what is on disk;
 # only this stamp says what was actually built and started.
 STAMP="${REPO_ROOT}/.swarm/deployed-sha"
+APPROVAL="${REPO_ROOT}/.swarm/deploy-approval.json"
+CLAIMED_APPROVAL="${REPO_ROOT}/.swarm/deploy-approval.claimed.json"
+USED_APPROVAL="${REPO_ROOT}/.swarm/deploy-approval.used.json"
 DEPLOYED="$(cat "$STAMP" 2>/dev/null || echo none)"
 
 if [ "$DEPLOYED" = "$TARGET" ] && [ "$FORCE" -eq 0 ]; then
@@ -84,37 +89,18 @@ fi
 log "deployed ${DEPLOYED}"
 log "target   ${TARGET}"
 
+# CI can prove a candidate; it cannot authorize production. Require Cristian's
+# exact-candidate local receipt before even evaluating the CI gate.
+if ! michel_validate_deploy_approval "$REPO_ROOT" "$TARGET" "$APPROVAL"; then
+  log "SKIP: no valid Cristian deployment approval for exact target ${TARGET}. Not deploying."
+  log "      Run docs/deploy/approve-deploy.sh ${TARGET} only after explicit approval."
+  exit 0
+fi
+
 # ----------------------------------------------------------- CI gate ---
 
-check_ci() {
-  sha="$1"
-  remote="$(git remote get-url origin)"
-  slug="$(printf '%s' "$remote" | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')"
-  workflow="${MICHEL_CI_WORKFLOW:-gauntlet.yml}"
-  api="https://api.github.com/repos/${slug}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=10"
-
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
-    body="$(curl -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-      -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null || true)"
-  else
-    body="$(curl -fsS -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null || true)"
-  fi
-
-  [ -n "$body" ] || return 2
-  printf '%s' "$body" | grep -q '"total_count": *0' && return 2
-
-  conclusions="$(printf '%s' "$body" | tr '{},' '\n' \
-    | grep -o '"conclusion": *"[^"]*"' | sed 's/.*: *"//; s/"//')"
-  [ -n "$conclusions" ] || return 2
-
-  if printf '%s\n' "$conclusions" | grep -qE '^(failure|cancelled|timed_out|action_required)$'; then
-    return 1
-  fi
-  printf '%s\n' "$conclusions" | grep -q '^success$'
-}
-
 if [ "${MICHEL_REQUIRE_CI:-true}" = "true" ]; then
-  if check_ci "$TARGET"; then
+  if michel_check_ci "$REPO_ROOT" "$TARGET"; then
     log "gauntlet passed for ${TARGET}"
   else
     status=$?
@@ -132,6 +118,11 @@ fi
 
 # ---------------------------------------------- backup, then deploy ---
 
+# Atomically remove the active one-shot receipt before the first mutation. A
+# failed attempt leaves only a claimed receipt and requires fresh approval.
+michel_claim_deploy_approval "$REPO_ROOT" "$TARGET" "$APPROVAL" "$CLAIMED_APPROVAL" \
+  || fail "deployment approval changed before it could be claimed"
+
 cd "$REPO_ROOT/docs/deploy"
 
 log "backing up the database first"
@@ -143,11 +134,12 @@ git checkout --quiet --detach "$TARGET" || fail "checkout failed"
 
 cd "$REPO_ROOT/docs/deploy"
 log "building and starting"
+export MICHEL_RELEASE_SHA="$TARGET"
 if ! michel_compose up -d --build; then
   log "build/start FAILED — rolling back to ${CURRENT}"
   cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
+  export MICHEL_RELEASE_SHA="$CURRENT"
   cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
-  mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$CURRENT" > "$STAMP"
   fail "deploy failed and was rolled back to ${CURRENT}"
 fi
 
@@ -155,9 +147,11 @@ fi
 
 log "waiting for health"
 healthy=0
+READY_BODY=""
 i=0
 while [ "$i" -lt 30 ]; do
-  if curl -fsS --max-time 3 "$HEALTH_URL" >/dev/null 2>&1; then
+  if response="$(curl -fsS --max-time 3 "$HEALTH_URL" 2>/dev/null)"; then
+    READY_BODY="$response"
     healthy=1
     break
   fi
@@ -169,12 +163,29 @@ if [ "$healthy" -ne 1 ]; then
   log "health check FAILED after 60s — rolling back to ${CURRENT}"
   michel_compose logs app --tail 40 || true
   cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
+  export MICHEL_RELEASE_SHA="$CURRENT"
   cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
-  mkdir -p "$(dirname "$STAMP")" && printf '%s\n' "$CURRENT" > "$STAMP"
   fail "new build was unhealthy; rolled back to ${CURRENT}"
 fi
 
-mkdir -p "$(dirname "$STAMP")"
-printf '%s\n' "$TARGET" > "$STAMP"
+# ------------------------------------------ exact release reconciliation ---
+
+READY_RELEASE_SHA="$(michel_readiness_release_sha "$READY_BODY" || true)"
+IMAGE_RELEASE_SHA="$(michel_running_image_revision || true)"
+
+if ! michel_reconcile_release "$TARGET" "$READY_RELEASE_SHA" "$IMAGE_RELEASE_SHA"; then
+  log "release provenance FAILED — target=${TARGET} readiness=${READY_RELEASE_SHA:-missing} image=${IMAGE_RELEASE_SHA:-missing}"
+  log "rolling back to ${CURRENT}; preserving the previous deployed-sha stamp"
+  cd "$REPO_ROOT" && git checkout --quiet --detach "$CURRENT"
+  export MICHEL_RELEASE_SHA="$CURRENT"
+  cd "$REPO_ROOT/docs/deploy" && michel_compose up -d --build || true
+  fail "release provenance mismatch; candidate was not stamped as deployed"
+fi
+
+michel_write_deployed_stamp "$TARGET" "$READY_RELEASE_SHA" "$IMAGE_RELEASE_SHA" "$STAMP" \
+  || fail "release provenance changed before the deployed-sha stamp could be written"
+
+michel_consume_deploy_approval "$TARGET" "$CLAIMED_APPROVAL" "$USED_APPROVAL" \
+  || fail "deployment succeeded but its one-shot approval could not be marked consumed"
 
 log "DEPLOYED ${TARGET} — healthy at ${HEALTH_URL}"

@@ -38,10 +38,21 @@ export interface Config {
   publicDir: string;
   /** Applied migrations are re-checksummed on boot unless this is off. */
   verifySchema: boolean;
+  /** Exact release built into the image, or null when provenance is absent/invalid. */
+  releaseSha: string | null;
 }
 
 export class ConfigError extends Error {
   override readonly name = 'ConfigError';
+}
+
+/**
+ * Normalize an exact Git commit without ever accepting a branch, tag, prefix,
+ * or caller description as release provenance.
+ */
+export function normalizeReleaseSha(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim();
+  return /^[0-9a-f]{40}$/i.test(trimmed) ? trimmed.toLowerCase() : null;
 }
 
 /**
@@ -105,6 +116,7 @@ export function readConfig(source: NodeJS.ProcessEnv): Config {
     https,
     publicDir: (source['PUBLIC_DIR'] ?? new URL('../public/', import.meta.url).pathname).trim(),
     verifySchema: source['SKIP_SCHEMA_VERIFY'] !== 'true',
+    releaseSha: normalizeReleaseSha(source['MICHEL_RELEASE_SHA']),
   };
 }
 
@@ -125,7 +137,9 @@ export function buildServerRouter(env: AppEnv): Router {
   router.get('/api/ready', async () => {
     try {
       await env.db.query('select 1');
-      return { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' }, body: '{"ready":true}' };
+      const releaseSha = normalizeReleaseSha(env.releaseSha);
+      const body = releaseSha === null ? { ready: true } : { ready: true, releaseSha };
+      return { status: 200, headers: { 'content-type': 'application/json; charset=utf-8' }, body: JSON.stringify(body) };
     } catch {
       return problem(503, 'not_ready', 'The database is not reachable.');
     }
@@ -220,6 +234,7 @@ export function createHttpServer(options: ServeOptions): Server {
     db: options.db,
     now: options.now ?? ((): string => new Date().toISOString()),
     https: options.config.https,
+    releaseSha: options.config.releaseSha,
   };
 
   const router = buildServerRouter(env);

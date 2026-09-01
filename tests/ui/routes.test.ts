@@ -35,7 +35,8 @@ for (const file of viewFiles) {
 }
 
 test('VPS deployment bundle contains the required production pieces', async () => {
-  for (const file of ['Dockerfile', 'compose.yml', 'Caddyfile', '.env.example', 'backup.sh', 'restore.sh', 'README.md']) {
+  for (const file of ['Dockerfile', 'compose.yml', 'Caddyfile', '.env.example', 'backup.sh', 'restore.sh',
+    'restore-drill.sh', 'manual-rollback.sh', 'approve-deploy.sh', 'bootstrap-gated-release.sh', 'README.md']) {
     await assert.doesNotReject(access(resolve(root, 'docs/deploy', file)), `missing docs/deploy/${file}`);
   }
 });

@@ -37,6 +37,8 @@ export interface AppEnv {
   now: () => string;
   /** False in local development so cookies work without TLS. */
   https: boolean;
+  /** Validated exact release provenance. Missing/invalid values are never trusted. */
+  releaseSha?: string | null;
 }
 
 /** Everything a route handler gets once the three checks have passed. */

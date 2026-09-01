@@ -35,6 +35,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pull_request's default checkout is a synthetic merge ref. Quality
+          # evidence must instead bind to the exact reviewed head candidate.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       # Node 22 strips the TypeScript types natively; there is no bundler and
       # no transpile step, so this is the whole toolchain.
@@ -49,6 +54,13 @@ jobs:
       - name: Run the gauntlet
         run: npm run gauntlet
 
+      - name: Verify Docker release provenance
+        env:
+          MICHEL_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MICHEL_SOURCE_REPOSITORY: https://github.com/${{ github.repository }}
+          MICHEL_BASELINE_SHA: 50403bcd52425d3f49788905ebd81962647e2d39
+        run: sh docs/deploy/verify-release-provenance-ci.sh
+
       # Always: a failing run is exactly when the scoreboard is worth reading,
       # and the report is written on every verdict.
       - name: Scoreboard
@@ -62,4 +74,21 @@ jobs:
           name: gauntlet-report
           path: .swarm/
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload release-provenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-provenance-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            .swarm/release-provenance-ci.json
+            .swarm/release-provenance-ci.sha256
+            .swarm/restore-drill-ci.json
+            .swarm/restore-drill-ci.sha256
+            .swarm/rollback-simulation-ci.json
+            .swarm/rollback-simulation-ci.sha256
+            .swarm/performance-smoke-ci.json
+            .swarm/performance-smoke-ci.sha256
+          if-no-files-found: error
           retention-days: 14

@@ -1,6 +1,15 @@
 FROM node:22-bookworm-slim AS runtime
 
+ARG RELEASE_SHA
+ARG SOURCE_REPOSITORY="https://github.com/crizpy7-sketch/Michel-OS"
+
+RUN node -e "const sha=process.env.RELEASE_SHA??'';if(!/^[0-9a-f]{40}$/i.test(sha)){console.error('RELEASE_SHA must be an exact 40-character Git SHA');process.exit(1)}"
+
+LABEL org.opencontainers.image.revision="${RELEASE_SHA}" \
+      org.opencontainers.image.source="${SOURCE_REPOSITORY}"
+
 ENV NODE_ENV=production
+ENV MICHEL_RELEASE_SHA="${RELEASE_SHA}"
 WORKDIR /app
 
 COPY package.json package-lock.json ./
