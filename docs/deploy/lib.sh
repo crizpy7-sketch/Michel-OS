@@ -109,8 +109,9 @@ michel_file_sha256() {
   sha256sum "$1" | awk '{print $1}'
 }
 
-# A production bootstrap may consume only a retained, integrity-checked
-# permanent Quality Gate receipt that passes for the exact deployment SHA.
+# A production bootstrap consumes only the permanent Quality Gate's scoped,
+# integrity-checked pre-deployment readiness receipt. Full-lifecycle receipts
+# remain separate and cannot be used to break their own observation gate.
 michel_validate_quality_receipt() {
   receipt="$1"
   target="$(michel_normalize_release_sha "$2")" || return 1
@@ -122,8 +123,26 @@ const fs = require('node:fs');
 const [path, target] = process.argv.slice(2);
 let value;
 try { value = JSON.parse(fs.readFileSync(path, 'utf8')); } catch { process.exit(1); }
-if (value?.candidateSha?.toLowerCase() !== target || value?.finalState !== 'pass' ||
-    typeof value?.receiptId !== 'string' || !/^[0-9a-f]{64}$/i.test(value.receiptId)) process.exit(1);
+const crypto = require('node:crypto');
+const expectedScopeBinding = typeof value?.receiptId === 'string'
+  ? crypto.createHash('sha256').update(`${value.receiptId}:pre-deployment-release-readiness:${target}`).digest('hex')
+  : '';
+if (value?.schemaVersion !== '1.1.0' ||
+    value?.evaluationScope !== 'pre-deployment-release-readiness' ||
+    value?.receiptStatus !== 'current' ||
+    value?.repository !== 'crizpy7-sketch/Michel-OS' ||
+    value?.candidateSha?.toLowerCase() !== target || value?.finalState !== 'pass' ||
+    typeof value?.receiptId !== 'string' || !/^[0-9a-f]{64}$/i.test(value.receiptId) ||
+    value?.scopeBindingId !== expectedScopeBinding ||
+    typeof value?.evaluatedAt !== 'string' || Number.isNaN(Date.parse(value.evaluatedAt)) ||
+    value?.scopeStatus?.productionDeploymentObservation !== 'not-evaluated-pre-deployment' ||
+    value?.scopeStatus?.fullLifecycleEvaluation !== 'required-after-production-observation' ||
+    value?.scopeStatus?.cristianApproval !== 'required-separately' ||
+    value?.scopeStatus?.deploymentAuthority !== 'not-granted' ||
+    value?.controlPlane?.authority !== 'shia-core' ||
+    value?.controlPlane?.qualityGateMayAcceptTask !== false ||
+    value?.controlPlane?.gstackMayAcceptTask !== false ||
+    value?.controlPlane?.qualityEvidenceGrantsActionAuthority !== false) process.exit(1);
 NODE
 }
 

@@ -131,9 +131,9 @@ The bounded operator procedure is:
 
    If `TARGET_SHA` differs from the reviewed PR head—even when its source tree
    is equivalent—stop. The merge commit is a new release identity and needs a
-   successful exact-SHA gauntlet, permanent Quality Gate PASS receipt, and new
-   Cristian deployment approval. PR-head evidence never silently certifies a
-   merge SHA.
+   successful exact-SHA gauntlet, permanent Quality Gate pre-deployment
+   release-readiness PASS receipt, and new Cristian deployment approval.
+   PR-head evidence never silently certifies a merge SHA.
 
 3. Retain the exact-target Quality Gate receipt and the independently observed
    real-production-backup isolated-restore receipt under ignored `.swarm/`
@@ -145,8 +145,11 @@ The bounded operator procedure is:
    RESTORE_EVIDENCE="/opt/michel-os/.swarm/real-backup-restore.json"
    ```
 
-   The Quality receipt must have `finalState: pass`, name `TARGET_SHA`, and
-   retain its receipt ID. The restore attestation must identify scope
+   The Quality receipt must have `evaluationScope: pre-deployment-release-readiness`,
+   `finalState: pass`, name `TARGET_SHA`,
+   retain its receipt ID, report production observation as
+   `not-evaluated-pre-deployment`, and preserve all false Quality authority
+   flags. The restore attestation must identify scope
    `real-production-backup-isolated-restore`, state that production database
    access was false, and record successful gzip, query, migration, table and
    cleanup checks. Both retained files are SHA-256 checked.
@@ -173,8 +176,8 @@ The bounded operator procedure is:
 The bootstrap independently rechecks the frozen timer/service, clean baseline
 Git and deployed SHAs (`50403bcd52425d3f49788905ebd81962647e2d39`), healthy app/database
 containers, a live database query, real-backup restore evidence, exact-target
-Quality PASS, Cristian's evidence-bound approval, `origin/main` identity and
-GitHub CI. It claims the approval, backs up before checkout/build, deploys the
+pre-deployment Quality PASS, Cristian's evidence-bound approval, `origin/main`
+identity and GitHub CI. It claims the approval, backs up before checkout/build, deploys the
 exact target, reconciles target/readiness/OCI identities, performs a bounded
 post-deploy database/provenance observation, installs the permanent gated unit,
 stamps success, consumes approval, and only then re-enables the timer.
@@ -185,6 +188,32 @@ after application mutation execute the bounded rollback to
 not replaced unless the candidate passes reconciliation and observation. The
 bootstrap is one-time infrastructure for this first gated release, not a
 second normal deployment path.
+
+### Quality evaluation scopes
+
+The permanent Quality Gate is evaluated twice; these are separate receipts,
+not two quality systems:
+
+- **Pre-deployment release readiness** is bound to the exact deployable SHA and
+  contains only evidence that can exist before deployment: code/CI, Docker and
+  ephemeral-runtime provenance, security/adversarial review, applicable
+  performance, backup/restore, rollback/bootstrap simulation and independent
+  review. It can pass while recording production deployment/observation as
+  `not-evaluated-pre-deployment`. Its control-plane flags remain false, it
+  grants no action authority, and Cristian's exact-SHA approval is required
+  separately.
+- **Full lifecycle** remains blocked or needs evidence until the real release is
+  deployed and independently observed. A post-deployment Quality evaluation
+  produces this second receipt; only it can support lifecycle completion and
+  Phase 7 deploy/observe progress.
+
+The exact first-release sequence is:
+
+`freeze legacy timer → merge → resolve final origin/main SHA → exact-main CI → pre-deployment Quality PASS → Cristian exact-SHA approval → bootstrap deploy → production observation → full post-deployment Quality evaluation`.
+
+The bootstrap validator rejects full-lifecycle receipts, blocked receipts,
+wrong or stale SHAs, wrong scope, malformed/integrity-mismatched receipts, and
+any receipt claiming Quality can grant deployment authority.
 
 ### Safety properties
 

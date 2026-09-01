@@ -10,6 +10,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -301,9 +302,21 @@ test('bootstrap evidence admission binds an integrity-checked Quality PASS and r
   t.after(() => rm(directory, { recursive: true, force: true }));
   const quality = join(directory, 'quality.json');
   const restore = join(directory, 'restore.json');
-  await writeFile(quality, JSON.stringify({
-    receiptId: 'a'.repeat(64), candidateSha: releaseSha, finalState: 'pass',
-  }));
+  const receiptId = 'a'.repeat(64);
+  const scopeBindingId = createHash('sha256')
+    .update(`${receiptId}:pre-deployment-release-readiness:${releaseSha}`).digest('hex');
+  const preDeploymentReceipt = (overrides: Record<string, unknown> = {}) => ({
+    schemaVersion: '1.1.0', receiptId, scopeBindingId, receiptStatus: 'current',
+    evaluationScope: 'pre-deployment-release-readiness', repository: 'crizpy7-sketch/Michel-OS',
+    candidateSha: releaseSha, finalState: 'pass', evaluatedAt: '2026-09-01T16:00:00Z',
+    scopeStatus: { productionDeploymentObservation: 'not-evaluated-pre-deployment',
+      fullLifecycleEvaluation: 'required-after-production-observation',
+      cristianApproval: 'required-separately', deploymentAuthority: 'not-granted' },
+    controlPlane: { authority: 'shia-core', qualityGateMayAcceptTask: false,
+      gstackMayAcceptTask: false, qualityEvidenceGrantsActionAuthority: false },
+    ...overrides,
+  });
+  await writeFile(quality, JSON.stringify(preDeploymentReceipt()));
   await writeFile(restore, JSON.stringify({
     scope: 'real-production-backup-isolated-restore', productionDatabaseAccessed: false,
     postgresImage: 'postgres:16-alpine', backup: { gzipIntegrity: 'pass' },
@@ -321,10 +334,44 @@ test('bootstrap evidence admission binds an integrity-checked Quality PASS and r
   assert.equal(restoreResult().status, 0, restoreResult().stderr);
   assert.notEqual(shell('. "$1"; michel_validate_quality_receipt "$2" "$3" "$4"',
     deployLib, quality, otherSha, qualityDigest).status, 0, 'Quality receipt passed another SHA');
-  await writeFile(quality, JSON.stringify({ receiptId: 'a'.repeat(64), candidateSha: releaseSha, finalState: 'blocked' }));
-  assert.notEqual(qualityResult().status, 0, 'blocked Quality receipt passed');
+
+  for (const [description, overrides] of [
+    ['full lifecycle blocked receipt', { evaluationScope: 'full-lifecycle', finalState: 'blocked' }],
+    ['wrong scope', { evaluationScope: 'full-lifecycle', finalState: 'pass' }],
+    ['stale receipt', { receiptStatus: 'superseded' }],
+    ['false production observation claim', { scopeStatus: { ...preDeploymentReceipt().scopeStatus,
+      productionDeploymentObservation: 'pass' } }],
+    ['Quality deployment authority claim', { controlPlane: { ...preDeploymentReceipt().controlPlane,
+      qualityEvidenceGrantsActionAuthority: true } }],
+    ['missing separate Cristian approval boundary', { scopeStatus: { ...preDeploymentReceipt().scopeStatus,
+      cristianApproval: 'satisfied-by-quality' } }],
+  ] as Array<[string, Record<string, unknown>]>) {
+    await writeFile(quality, JSON.stringify(preDeploymentReceipt(overrides)));
+    const changedDigest = digest(quality);
+    const result = shell('. "$1"; michel_validate_quality_receipt "$2" "$3" "$4"',
+      deployLib, quality, releaseSha, changedDigest);
+    assert.notEqual(result.status, 0, `${description} satisfied bootstrap`);
+  }
+
+  await writeFile(quality, JSON.stringify(preDeploymentReceipt()));
+  assert.notEqual(shell('. "$1"; michel_validate_quality_receipt "$2" "$3" "$4"',
+    deployLib, quality, releaseSha, otherSha.padEnd(64, '1')).status, 0, 'digest mismatch passed');
   await writeFile(restore, '{}');
   assert.notEqual(restoreResult().status, 0, 'modified restore evidence passed its old digest');
+});
+
+test('pre-deployment readiness and full lifecycle Quality receipts remain separate evaluations', async () => {
+  const validator = await readFile(deployLib, 'utf8');
+  const bootstrap = await readFile(resolve('docs/deploy/bootstrap-gated-release.sh'), 'utf8');
+  const documentation = await readFile(resolve('docs/deploy/README.md'), 'utf8');
+  assert.match(validator, /pre-deployment-release-readiness/);
+  assert.match(validator, /not-evaluated-pre-deployment/);
+  assert.match(validator, /required-after-production-observation/);
+  assert.match(validator, /qualityEvidenceGrantsActionAuthority !== false/);
+  assert.match(bootstrap, /pre-deployment release-readiness Quality PASS/);
+  assert.match(documentation, /these are separate receipts/i);
+  assert.match(documentation, /\*\*Full lifecycle\*\*/i);
+  assert.match(documentation, /post-deployment.*Quality/i);
 });
 
 test('bootstrap state machine freezes before merge and enables automation only after observation', async () => {

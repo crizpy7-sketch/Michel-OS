@@ -93,7 +93,7 @@ cd "$TOOL_ROOT/docs/deploy"
 QUALITY_DIGEST="$(michel_file_sha256 "$QUALITY_RECEIPT")" || fail "Quality receipt missing"
 RESTORE_DIGEST="$(michel_file_sha256 "$RESTORE_EVIDENCE")" || fail "restore evidence missing"
 michel_validate_quality_receipt "$QUALITY_RECEIPT" "$TARGET" "$QUALITY_DIGEST" ||
-  fail "Quality Gate receipt is not an integrity-checked PASS for the exact target"
+  fail "pre-deployment release-readiness Quality PASS is missing, stale, wrong-scope, or not bound to the exact target"
 michel_validate_real_backup_restore_evidence "$RESTORE_EVIDENCE" "$RESTORE_DIGEST" ||
   fail "successful real-production-backup isolated restore evidence is missing"
 

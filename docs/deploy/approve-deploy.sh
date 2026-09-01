@@ -35,7 +35,7 @@ if [ "$MODE" = "bootstrap-gated-release" ]; then
   QUALITY_DIGEST="$(michel_file_sha256 "$QUALITY_RECEIPT")" || { echo "Quality receipt is missing" >&2; exit 1; }
   RESTORE_DIGEST="$(michel_file_sha256 "$RESTORE_EVIDENCE")" || { echo "Restore evidence is missing" >&2; exit 1; }
   michel_validate_quality_receipt "$QUALITY_RECEIPT" "$TARGET" "$QUALITY_DIGEST" \
-    || { echo "Quality receipt is not PASS for the exact target" >&2; exit 1; }
+    || { echo "Quality receipt is not a valid exact-target pre-deployment release-readiness PASS" >&2; exit 1; }
   michel_validate_real_backup_restore_evidence "$RESTORE_EVIDENCE" "$RESTORE_DIGEST" \
     || { echo "Real-production-backup restore evidence is invalid" >&2; exit 1; }
 fi
