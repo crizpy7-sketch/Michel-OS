@@ -186,6 +186,7 @@ done
 PERF_EVIDENCE="${EVIDENCE_DIR}/performance-smoke-ci.json"
 node - "$BASELINE_PORT" "$HOST_PORT" "$CANDIDATE" "$BASELINE" "$PERF_EVIDENCE" <<'NODE'
 const [baselinePort, candidatePort, candidateSha, baselineSha, evidencePath] = process.argv.slice(2);
+const { writeFileSync } = await import('node:fs');
 const warmups = 5, samples = 30;
 async function measure(port) {
   for (let i=0;i<warmups;i++) { const r=await fetch(`http://127.0.0.1:${port}/api/ready`); if(!r.ok) throw Error('warmup failed'); }
@@ -197,7 +198,7 @@ async function measure(port) {
 const baseline=await measure(baselinePort), candidate=await measure(candidatePort);
 const allowedMedianMs=Math.max(baseline.medianMs*5,baseline.medianMs+25);
 const state=candidate.medianMs<=allowedMedianMs?'pass':'fail';
-require('node:fs').writeFileSync(evidencePath,JSON.stringify({schemaVersion:'1.0.0',scope:'ci-readiness-performance-smoke',candidateSha,baselineSha,methodology:{sameRunner:true,sameDatabase:true,warmups,samples,metric:'sequential /api/ready response time',rule:'candidate median <= max(baseline median * 5, baseline median + 25ms)'},baseline,candidate,allowedMedianMs,state,productionPerformance:false},null,2)+'\n');
+writeFileSync(evidencePath,JSON.stringify({schemaVersion:'1.0.0',scope:'ci-readiness-performance-smoke',candidateSha,baselineSha,methodology:{sameRunner:true,sameDatabase:true,warmups,samples,metric:'sequential /api/ready response time',rule:'candidate median <= max(baseline median * 5, baseline median + 25ms)'},baseline,candidate,allowedMedianMs,state,productionPerformance:false},null,2)+'\n');
 if(state!=='pass') process.exit(1);
 NODE
 sha256sum "$PERF_EVIDENCE" > "${EVIDENCE_DIR}/performance-smoke-ci.sha256"
