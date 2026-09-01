@@ -257,6 +257,100 @@ test('operator approval script is explicit, exact-SHA-only and writes ignored no
   assert.match(ignore, /^\.swarm\/$/m);
 });
 
+test('bootstrap policy refuses unsafe states and accepts only one exact fully-evidenced target', () => {
+  const baseline = releaseSha;
+  const target = otherSha;
+  const invoke = (values: string[]) => shell('. "$1"; shift; michel_bootstrap_preflight "$@"',
+    deployLib, ...values);
+  const valid = [baseline, target, target, baseline, baseline,
+    'false', 'false', 'false', target, 'pass', 'pass', 'pass'];
+  assert.equal(invoke(valid).status, 0, invoke(valid).stderr);
+
+  const mutations: Array<[number, string, string]> = [
+    [5, 'true', 'legacy timer active'],
+    [6, 'true', 'legacy timer enabled'],
+    [7, 'true', 'legacy deployment service active'],
+    [3, target, 'wrong live Git baseline'],
+    [4, target, 'wrong deployed baseline'],
+    [8, baseline, 'approval for another SHA'],
+    [8, '', 'missing approval'],
+    [9, 'missing', 'missing CI'],
+    [10, 'missing', 'missing Quality evidence'],
+    [11, 'missing', 'missing restore evidence'],
+    [2, baseline, 'target differs from final main SHA'],
+  ];
+  for (const [index, replacement, description] of mutations) {
+    const candidate = [...valid];
+    candidate[index] = replacement;
+    assert.notEqual(invoke(candidate).status, 0, `accepted ${description}`);
+  }
+});
+
+test('bootstrap candidate outcome requires backup and exact three-way provenance', () => {
+  const result = (backup: string, ready: string, image: string) =>
+    shell('. "$1"; michel_bootstrap_candidate_result "$2" "$3" "$4" "$5"',
+      deployLib, releaseSha, backup, ready, image);
+  assert.equal(result('pass', releaseSha, releaseSha).status, 0);
+  assert.notEqual(result('failed', releaseSha, releaseSha).status, 0, 'backup failure was accepted');
+  assert.notEqual(result('pass', otherSha, releaseSha).status, 0, 'readiness mismatch was accepted');
+  assert.notEqual(result('pass', releaseSha, otherSha).status, 0, 'OCI mismatch was accepted');
+});
+
+test('bootstrap evidence admission binds an integrity-checked Quality PASS and real-backup restore', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'michel-bootstrap-evidence-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const quality = join(directory, 'quality.json');
+  const restore = join(directory, 'restore.json');
+  await writeFile(quality, JSON.stringify({
+    receiptId: 'a'.repeat(64), candidateSha: releaseSha, finalState: 'pass',
+  }));
+  await writeFile(restore, JSON.stringify({
+    scope: 'real-production-backup-isolated-restore', productionDatabaseAccessed: false,
+    postgresImage: 'postgres:16-alpine', backup: { gzipIntegrity: 'pass' },
+    restore: { state: 'pass', queryable: true, migrationRecords: 2, cleanup: 'complete',
+      requiredTables: ['app_user', 'household', 'member', 'schedule', 'event'] },
+  }));
+  const digest = (path: string) => shell('sha256sum "$1" | awk \'{print $1}\'', path).stdout.trim();
+  const qualityDigest = digest(quality);
+  const restoreDigest = digest(restore);
+  const qualityResult = () => shell('. "$1"; michel_validate_quality_receipt "$2" "$3" "$4"',
+    deployLib, quality, releaseSha, qualityDigest);
+  const restoreResult = () => shell('. "$1"; michel_validate_real_backup_restore_evidence "$2" "$3"',
+    deployLib, restore, restoreDigest);
+  assert.equal(qualityResult().status, 0, qualityResult().stderr);
+  assert.equal(restoreResult().status, 0, restoreResult().stderr);
+  assert.notEqual(shell('. "$1"; michel_validate_quality_receipt "$2" "$3" "$4"',
+    deployLib, quality, otherSha, qualityDigest).status, 0, 'Quality receipt passed another SHA');
+  await writeFile(quality, JSON.stringify({ receiptId: 'a'.repeat(64), candidateSha: releaseSha, finalState: 'blocked' }));
+  assert.notEqual(qualityResult().status, 0, 'blocked Quality receipt passed');
+  await writeFile(restore, '{}');
+  assert.notEqual(restoreResult().status, 0, 'modified restore evidence passed its old digest');
+});
+
+test('bootstrap state machine freezes before merge and enables automation only after observation', async () => {
+  const source = await readFile(resolve('docs/deploy/bootstrap-gated-release.sh'), 'utf8');
+  const frozen = source.indexOf('timer_frozen || fail');
+  const mainBinding = source.indexOf('[ "$MAIN_SHA" = "$TARGET" ]');
+  const approval = source.indexOf('michel_validate_bootstrap_approval');
+  const ci = source.indexOf('michel_check_ci');
+  const claim = source.indexOf('michel_claim_deploy_approval');
+  const backup = source.indexOf('sh ./backup.sh');
+  const checkout = source.indexOf('checkout --quiet --detach "$TARGET"');
+  const reconcile = source.indexOf('michel_bootstrap_candidate_result');
+  const observation = source.indexOf('while [ "$elapsed" -lt "$OBSERVATION_SECONDS" ]');
+  const stamp = source.indexOf('michel_write_deployed_stamp');
+  const consume = source.indexOf('michel_consume_deploy_approval');
+  const enable = source.indexOf('systemctl enable --now "$TIMER"');
+  assert.ok(frozen >= 0 && mainBinding > frozen && approval > mainBinding && ci > approval);
+  assert.ok(claim > ci && backup > claim && checkout > backup, 'mutation preceded claim/backup');
+  assert.ok(reconcile > checkout && observation > reconcile && stamp > observation,
+    'candidate was stamped before reconciliation/observation');
+  assert.ok(consume > stamp && enable > consume, 'approval/timer order is unsafe');
+  assert.match(source, /merge SHA substitution requires new evidence and approval/);
+  assert.match(source, /rollback_baseline/);
+  assert.match(source, /timer remains disabled and approval remains non-reusable/);
+});
+
 test('the existing gauntlet runs exact-candidate Docker and ephemeral-runtime provenance checks', async () => {
   const workflow = await readFile(resolve('.github/workflows/gauntlet.yml'), 'utf8');
   const verifier = await readFile(resolve('docs/deploy/verify-release-provenance-ci.sh'), 'utf8');

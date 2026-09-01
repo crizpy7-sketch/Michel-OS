@@ -74,6 +74,110 @@ michel_require_git_commit() {
   printf '%s' "$resolved"
 }
 
+# Query GitHub for a completed successful gauntlet bound to one exact commit.
+# The caller supplies a local repository only to resolve its canonical remote;
+# CI status is fetched from GitHub and cannot be replaced by a local string.
+michel_check_ci() {
+  repository="$1"
+  sha="$(michel_require_git_commit "$repository" "$2")" || return 2
+  remote="$(git -C "$repository" remote get-url origin 2>/dev/null)" || return 2
+  slug="$(printf '%s' "$remote" | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')"
+  [ -n "$slug" ] || return 2
+  workflow="${MICHEL_CI_WORKFLOW:-gauntlet.yml}"
+  api="https://api.github.com/repos/${slug}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=10"
+
+  if [ -n "${GITHUB_TOKEN:-}" ]; then
+    body="$(curl -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+      -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null || true)"
+  else
+    body="$(curl -fsS -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null || true)"
+  fi
+
+  [ -n "$body" ] || return 2
+  printf '%s' "$body" | grep -q '"total_count": *0' && return 2
+  conclusions="$(printf '%s' "$body" | tr '{},' '\n' \
+    | grep -o '"conclusion": *"[^"]*"' | sed 's/.*: *"//; s/"//')"
+  [ -n "$conclusions" ] || return 2
+  if printf '%s\n' "$conclusions" | grep -qE '^(failure|cancelled|timed_out|action_required)$'; then
+    return 1
+  fi
+  printf '%s\n' "$conclusions" | grep -q '^success$'
+}
+
+michel_file_sha256() {
+  [ -f "$1" ] || return 1
+  sha256sum "$1" | awk '{print $1}'
+}
+
+# A production bootstrap may consume only a retained, integrity-checked
+# permanent Quality Gate receipt that passes for the exact deployment SHA.
+michel_validate_quality_receipt() {
+  receipt="$1"
+  target="$(michel_normalize_release_sha "$2")" || return 1
+  expected_digest="$(michel_normalize_digest "$3")" || return 1
+  actual_digest="$(michel_file_sha256 "$receipt")" || return 1
+  [ "$actual_digest" = "$expected_digest" ] || return 1
+  node - "$receipt" "$target" <<'NODE'
+const fs = require('node:fs');
+const [path, target] = process.argv.slice(2);
+let value;
+try { value = JSON.parse(fs.readFileSync(path, 'utf8')); } catch { process.exit(1); }
+if (value?.candidateSha?.toLowerCase() !== target || value?.finalState !== 'pass' ||
+    typeof value?.receiptId !== 'string' || !/^[0-9a-f]{64}$/i.test(value.receiptId)) process.exit(1);
+NODE
+}
+
+michel_normalize_digest() {
+  printf '%s' "$1" | sed 's/^sha256://' | grep -Eq '^[0-9a-fA-F]{64}$' || return 1
+  printf '%s' "$1" | sed 's/^sha256://' | tr 'A-F' 'a-f'
+}
+
+# This is an operator-retained attestation for a copied real production backup,
+# not a claim that production itself was modified or restored.
+michel_validate_real_backup_restore_evidence() {
+  evidence="$1"
+  expected_digest="$(michel_normalize_digest "$2")" || return 1
+  actual_digest="$(michel_file_sha256 "$evidence")" || return 1
+  [ "$actual_digest" = "$expected_digest" ] || return 1
+  node - "$evidence" <<'NODE'
+const fs = require('node:fs');
+let value;
+try { value = JSON.parse(fs.readFileSync(process.argv[2], 'utf8')); } catch { process.exit(1); }
+if (value?.scope !== 'real-production-backup-isolated-restore' ||
+    value?.productionDatabaseAccessed !== false || value?.postgresImage !== 'postgres:16-alpine' ||
+    value?.backup?.gzipIntegrity !== 'pass' || value?.restore?.state !== 'pass' ||
+    value?.restore?.queryable !== true || !(value?.restore?.migrationRecords > 0) ||
+    value?.restore?.cleanup !== 'complete') process.exit(1);
+const required = ['app_user', 'household', 'member', 'schedule', 'event'];
+if (!required.every((table) => value.restore.requiredTables?.includes(table))) process.exit(1);
+NODE
+}
+
+# Pure policy core used by the real bootstrap and deterministic simulations.
+# Runtime adapters must turn observations into these exact values; absence is
+# never converted into success.
+michel_bootstrap_preflight() {
+  baseline="$(michel_normalize_release_sha "$1")" || return 1
+  target="$(michel_normalize_release_sha "$2")" || return 1
+  main_sha="$(michel_normalize_release_sha "$3")" || return 1
+  live_git="$(michel_normalize_release_sha "$4")" || return 1
+  deployed="$(michel_normalize_release_sha "$5")" || return 1
+  timer_active="$6"; timer_enabled="$7"; service_active="$8"
+  approval_sha="$(michel_normalize_release_sha "$9")" || return 1
+  shift 9
+  ci_state="$1"; quality_state="$2"; restore_state="$3"
+  [ "$timer_active" = false ] && [ "$timer_enabled" = false ] && [ "$service_active" = false ] || return 1
+  [ "$live_git" = "$baseline" ] && [ "$deployed" = "$baseline" ] || return 1
+  [ "$target" = "$main_sha" ] && [ "$approval_sha" = "$target" ] || return 1
+  [ "$ci_state" = pass ] && [ "$quality_state" = pass ] && [ "$restore_state" = pass ]
+}
+
+michel_bootstrap_candidate_result() {
+  target="$1"; backup_state="$2"; ready_sha="$3"; image_sha="$4"
+  [ "$backup_state" = pass ] || return 1
+  michel_reconcile_release "$target" "$ready_sha" "$image_sha"
+}
+
 # Read a strict local operator approval receipt. The VPS filesystem account is
 # the trust boundary: arbitrary caller strings and CI status are not receipts.
 michel_read_deploy_approval_sha() {
@@ -100,6 +204,22 @@ michel_validate_deploy_approval() {
   target="$(michel_require_git_commit "$repository" "$2")" || return 1
   approved="$(michel_read_deploy_approval_sha "$3" approved)" || return 1
   [ "$approved" = "$target" ]
+}
+
+michel_validate_bootstrap_approval() {
+  repository="$1"; target="$2"; receipt="$3"; quality_digest="$4"; restore_digest="$5"
+  michel_validate_deploy_approval "$repository" "$target" "$receipt" || return 1
+  quality_digest="$(michel_normalize_digest "$quality_digest")" || return 1
+  restore_digest="$(michel_normalize_digest "$restore_digest")" || return 1
+  node - "$receipt" "$quality_digest" "$restore_digest" <<'NODE'
+const fs = require('node:fs');
+const [path, qualityDigest, restoreDigest] = process.argv.slice(2);
+let value;
+try { value = JSON.parse(fs.readFileSync(path, 'utf8')); } catch { process.exit(1); }
+if (value?.purpose !== 'bootstrap-gated-release' ||
+    value?.qualityReceiptDigest !== `sha256:${qualityDigest}` ||
+    value?.restoreEvidenceDigest !== `sha256:${restoreDigest}`) process.exit(1);
+NODE
 }
 
 # Claim before the first production mutation. The atomic rename removes the

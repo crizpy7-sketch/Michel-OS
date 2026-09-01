@@ -94,6 +94,98 @@ cannot leave reusable authorization. Successful deployment marks it consumed.
 The VPS operator account is the local receipt trust boundary; CI alone can
 never create or satisfy this approval.
 
+### One-time handoff from the legacy timer
+
+The first gated release has a bootstrap constraint: production is still using
+the old timer until this change is installed. The timer must therefore be
+frozen **before the PR is merged**. Do not merge first and hope the next timer
+tick is slow enough.
+
+The bounded operator procedure is:
+
+1. Fetch the reviewed PR head into an isolated worktree without changing
+   `/opt/michel-os`, then run its freeze-only command:
+
+   ```sh
+   cd /opt/michel-os
+   git fetch origin refs/pull/20/head
+   REVIEWED_TOOL_SHA="$(git rev-parse FETCH_HEAD)"
+   git worktree add --detach "/opt/michel-os-bootstrap-${REVIEWED_TOOL_SHA}" "$REVIEWED_TOOL_SHA"
+   sudo sh "/opt/michel-os-bootstrap-${REVIEWED_TOOL_SHA}/docs/deploy/bootstrap-gated-release.sh" --freeze-legacy-timer
+   systemctl is-enabled michel-auto-deploy.timer  # must report disabled
+   systemctl is-active michel-auto-deploy.timer   # must report inactive
+   systemctl is-active michel-auto-deploy.service # must report inactive
+   ```
+
+   The freeze refuses to kill an already-running deployment service. If the
+   service is active, wait for it to finish, re-establish the known baseline,
+   and freeze again. The currently running containers remain untouched.
+
+2. Only after the freeze is independently confirmed may PR #20 be merged.
+   Resolve the actual deployable identity from GitHub `main`:
+
+   ```sh
+   git fetch origin main
+   TARGET_SHA="$(git rev-parse origin/main)"
+   ```
+
+   If `TARGET_SHA` differs from the reviewed PR head—even when its source tree
+   is equivalent—stop. The merge commit is a new release identity and needs a
+   successful exact-SHA gauntlet, permanent Quality Gate PASS receipt, and new
+   Cristian deployment approval. PR-head evidence never silently certifies a
+   merge SHA.
+
+3. Retain the exact-target Quality Gate receipt and the independently observed
+   real-production-backup isolated-restore receipt under ignored `.swarm/`
+   operational state. Create a clean detached worktree at the final target:
+
+   ```sh
+   git worktree add --detach "/opt/michel-os-bootstrap-${TARGET_SHA}" "$TARGET_SHA"
+   QUALITY_RECEIPT="/opt/michel-os/.swarm/quality-${TARGET_SHA}.json"
+   RESTORE_EVIDENCE="/opt/michel-os/.swarm/real-backup-restore.json"
+   ```
+
+   The Quality receipt must have `finalState: pass`, name `TARGET_SHA`, and
+   retain its receipt ID. The restore attestation must identify scope
+   `real-production-backup-isolated-restore`, state that production database
+   access was false, and record successful gzip, query, migration, table and
+   cleanup checks. Both retained files are SHA-256 checked.
+
+4. Cristian creates the one-shot bootstrap approval. This binds the exact
+   target to both evidence-file digests:
+
+   ```sh
+   sudo env MICHEL_OPERATIONAL_ROOT=/opt/michel-os \
+     sh "/opt/michel-os-bootstrap-${TARGET_SHA}/docs/deploy/approve-deploy.sh" \
+     --bootstrap "$TARGET_SHA" "$QUALITY_RECEIPT" "$RESTORE_EVIDENCE"
+   ```
+
+5. Run the bootstrap from that exact-target worktree:
+
+   ```sh
+   sudo env MICHEL_PRODUCTION_ROOT=/opt/michel-os \
+     sh "/opt/michel-os-bootstrap-${TARGET_SHA}/docs/deploy/bootstrap-gated-release.sh" \
+     --target "$TARGET_SHA" \
+     --quality-receipt "$QUALITY_RECEIPT" \
+     --restore-evidence "$RESTORE_EVIDENCE"
+   ```
+
+The bootstrap independently rechecks the frozen timer/service, clean baseline
+Git and deployed SHAs (`50403bcd52425d3f49788905ebd81962647e2d39`), healthy app/database
+containers, a live database query, real-backup restore evidence, exact-target
+Quality PASS, Cristian's evidence-bound approval, `origin/main` identity and
+GitHub CI. It claims the approval, backs up before checkout/build, deploys the
+exact target, reconciles target/readiness/OCI identities, performs a bounded
+post-deploy database/provenance observation, installs the permanent gated unit,
+stamps success, consumes approval, and only then re-enables the timer.
+
+Any failure leaves the timer disabled and the approval non-reusable. Failures
+after application mutation execute the bounded rollback to
+`50403bcd52425d3f49788905ebd81962647e2d39`; the previous deployment stamp is
+not replaced unless the candidate passes reconciliation and observation. The
+bootstrap is one-time infrastructure for this first gated release, not a
+second normal deployment path.
+
 ### Safety properties
 
 - **Refuses to run on a dirty working tree** — local edits on the box are never

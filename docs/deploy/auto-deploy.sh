@@ -99,35 +99,8 @@ fi
 
 # ----------------------------------------------------------- CI gate ---
 
-check_ci() {
-  sha="$1"
-  remote="$(git remote get-url origin)"
-  slug="$(printf '%s' "$remote" | sed -E 's#^(https://github\.com/|git@github\.com:)##; s#\.git$##')"
-  workflow="${MICHEL_CI_WORKFLOW:-gauntlet.yml}"
-  api="https://api.github.com/repos/${slug}/actions/workflows/${workflow}/runs?head_sha=${sha}&per_page=10"
-
-  if [ -n "${GITHUB_TOKEN:-}" ]; then
-    body="$(curl -fsS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-      -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null || true)"
-  else
-    body="$(curl -fsS -H 'Accept: application/vnd.github+json' "$api" 2>/dev/null || true)"
-  fi
-
-  [ -n "$body" ] || return 2
-  printf '%s' "$body" | grep -q '"total_count": *0' && return 2
-
-  conclusions="$(printf '%s' "$body" | tr '{},' '\n' \
-    | grep -o '"conclusion": *"[^"]*"' | sed 's/.*: *"//; s/"//')"
-  [ -n "$conclusions" ] || return 2
-
-  if printf '%s\n' "$conclusions" | grep -qE '^(failure|cancelled|timed_out|action_required)$'; then
-    return 1
-  fi
-  printf '%s\n' "$conclusions" | grep -q '^success$'
-}
-
 if [ "${MICHEL_REQUIRE_CI:-true}" = "true" ]; then
-  if check_ci "$TARGET"; then
+  if michel_check_ci "$REPO_ROOT" "$TARGET"; then
     log "gauntlet passed for ${TARGET}"
   else
     status=$?
