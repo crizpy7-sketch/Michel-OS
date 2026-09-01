@@ -74,6 +74,71 @@ michel_require_git_commit() {
   printf '%s' "$resolved"
 }
 
+# Read a strict local operator approval receipt. The VPS filesystem account is
+# the trust boundary: arbitrary caller strings and CI status are not receipts.
+michel_read_deploy_approval_sha() {
+  receipt="$1"
+  expected_state="${2:-approved}"
+  [ -f "$receipt" ] || return 1
+  node - "$receipt" "$expected_state" <<'NODE'
+const fs = require('node:fs');
+const [path, expectedState] = process.argv.slice(2);
+let value;
+try { value = JSON.parse(fs.readFileSync(path, 'utf8')); } catch { process.exit(1); }
+if (value?.schemaVersion !== '1.0.0' || value?.kind !== 'deployment-approval' ||
+    value?.action !== 'deploy' || value?.state !== expectedState ||
+    value?.approvedBy !== 'Cristian' || value?.repository !== 'crizpy7-sketch/Michel-OS' ||
+    value?.source !== 'local-operator-confirmation' ||
+    typeof value?.approvedAt !== 'string' || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(value.approvedAt) ||
+    typeof value?.candidateSha !== 'string' || !/^[0-9a-f]{40}$/i.test(value.candidateSha)) process.exit(1);
+process.stdout.write(value.candidateSha.toLowerCase());
+NODE
+}
+
+michel_validate_deploy_approval() {
+  repository="$1"
+  target="$(michel_require_git_commit "$repository" "$2")" || return 1
+  approved="$(michel_read_deploy_approval_sha "$3" approved)" || return 1
+  [ "$approved" = "$target" ]
+}
+
+# Claim before the first production mutation. The atomic rename removes the
+# active authorization even if a later command or the host fails unexpectedly.
+michel_claim_deploy_approval() {
+  repository="$1"; target="$2"; active="$3"; claimed="$4"
+  michel_validate_deploy_approval "$repository" "$target" "$active" || return 1
+  mkdir -p "$(dirname "$claimed")"
+  mv "$active" "$claimed" || return 1
+  node - "$claimed" <<'NODE'
+const fs = require('node:fs');
+const path = process.argv[2];
+const value = JSON.parse(fs.readFileSync(path, 'utf8'));
+value.state = 'claimed';
+value.claimedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+const temporary = `${path}.tmp.${process.pid}`;
+fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+fs.renameSync(temporary, path);
+NODE
+}
+
+michel_consume_deploy_approval() {
+  target="$(michel_normalize_release_sha "$1")" || return 1
+  claimed="$2"; used="$3"
+  approved="$(michel_read_deploy_approval_sha "$claimed" claimed)" || return 1
+  [ "$approved" = "$target" ] || return 1
+  node - "$claimed" "$used" <<'NODE'
+const fs = require('node:fs');
+const [claimed, used] = process.argv.slice(2);
+const value = JSON.parse(fs.readFileSync(claimed, 'utf8'));
+value.state = 'consumed';
+value.consumedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+const temporary = `${used}.tmp.${process.pid}`;
+fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600 });
+fs.renameSync(temporary, used);
+fs.unlinkSync(claimed);
+NODE
+}
+
 # Extract only the small machine field owned by Michel OS. A healthy HTTP
 # response without this exact field remains useful for uptime checks, but is
 # insufficient for release verification.

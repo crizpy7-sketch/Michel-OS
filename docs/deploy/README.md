@@ -78,12 +78,30 @@ leaked repository secret cannot touch the host.
 automatically, at 3am". For a private repository set `GITHUB_TOKEN` in `.env` so
 the deploy can read commit status; without one it skips rather than guesses.
 
+CI is evidence, not deployment authority. Before the timer may mutate
+production, Cristian must create one local approval for the exact target:
+
+```sh
+cd /opt/michel-os/docs/deploy
+./approve-deploy.sh <exact-40-character-target-sha>
+```
+
+The script requires typing `APPROVE DEPLOY <sha>` exactly and writes a
+secret-free, mode-0600 receipt under ignored `.swarm/` state. `auto-deploy.sh`
+accepts only an approved receipt naming that exact Git commit. It atomically
+claims the receipt before backup/checkout, so a crash or failed deployment
+cannot leave reusable authorization. Successful deployment marks it consumed.
+The VPS operator account is the local receipt trust boundary; CI alone can
+never create or satisfy this approval.
+
 ### Safety properties
 
 - **Refuses to run on a dirty working tree** — local edits on the box are never
   silently destroyed by a checkout.
 - **Backs up before every deploy**, and treats a suspiciously small dump as a
   failure rather than keeping a useless file.
+- **Requires Cristian's one-shot exact-SHA approval** before CI, backup,
+  checkout, build, or any production mutation.
 - **Rolls back automatically** on a failed build or a failed health check.
 - **Fails closed on release-provenance mismatch** and leaves the previous
   successful deployment stamp intact.
@@ -106,6 +124,10 @@ The automatic deployer compares that response and the running image label to
 the target before updating `.swarm/deployed-sha`. Missing, malformed, stale, or
 conflicting provenance fails the deployment. The source label is the stable
 repository identifier `https://github.com/crizpy7-sketch/Michel-OS`.
+
+The complete authorization/evidence order is:
+
+`Cristian approval → exact-SHA local receipt → CI → claim receipt → backup → build → health + provenance → deployed stamp → consume receipt`.
 
 This reconciliation proves release identity; it does not prove that a database
 backup can be restored. Recovery still requires a separately observed restore

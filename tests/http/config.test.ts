@@ -195,6 +195,68 @@ test('auto-deploy reconciles target, readiness and image before its only success
   assert.match(source, /candidate was not stamped as deployed/);
 });
 
+test('deployment approval is exact, one-shot, and precedes every production mutation', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'michel-deploy-approval-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const active = join(directory, 'active.json');
+  const claimed = join(directory, 'claimed.json');
+  const used = join(directory, 'used.json');
+  const repository = resolve('.');
+  const head = shell('git -C "$1" rev-parse HEAD', repository).stdout.trim().toLowerCase();
+  const receipt = (candidateSha: string, state = 'approved') => JSON.stringify({
+    schemaVersion: '1.0.0', kind: 'deployment-approval', action: 'deploy', state,
+    candidateSha, repository: 'crizpy7-sketch/Michel-OS', approvedBy: 'Cristian',
+    approvedAt: '2026-09-01T00:00:00Z', source: 'local-operator-confirmation',
+  });
+
+  const validate = () => shell('. "$1"; michel_validate_deploy_approval "$2" "$3" "$4"',
+    deployLib, repository, head, active);
+  assert.notEqual(validate().status, 0, 'missing approval authorized deployment');
+  await writeFile(active, '{malformed');
+  assert.notEqual(validate().status, 0, 'malformed approval authorized deployment');
+  await writeFile(active, receipt(otherSha));
+  assert.notEqual(validate().status, 0, 'approval for another SHA authorized deployment');
+  await writeFile(active, receipt(head));
+  assert.equal(validate().status, 0, 'exact candidate approval was not callable');
+
+  const claim = shell('. "$1"; michel_claim_deploy_approval "$2" "$3" "$4" "$5"',
+    deployLib, repository, head, active, claimed);
+  assert.equal(claim.status, 0, claim.stderr);
+  await assert.rejects(readFile(active), 'claimed approval remained reusable');
+  assert.match(await readFile(claimed, 'utf8'), /"state": "claimed"/);
+  assert.notEqual(validate().status, 0, 'failed/claimed approval silently became reusable');
+
+  const consume = shell('. "$1"; michel_consume_deploy_approval "$2" "$3" "$4"',
+    deployLib, head, claimed, used);
+  assert.equal(consume.status, 0, consume.stderr);
+  await assert.rejects(readFile(claimed), 'successful deployment left a claim reusable');
+  assert.match(await readFile(used, 'utf8'), /"state": "consumed"/);
+  assert.match(await readFile(used, 'utf8'), new RegExp(head));
+
+  const source = await readFile(resolve('docs/deploy/auto-deploy.sh'), 'utf8');
+  const approvalGate = source.indexOf('michel_validate_deploy_approval "$REPO_ROOT" "$TARGET"');
+  const ciGate = source.indexOf('if [ "${MICHEL_REQUIRE_CI:-true}" = "true" ]');
+  const claimGate = source.indexOf('michel_claim_deploy_approval "$REPO_ROOT" "$TARGET"');
+  const backup = source.indexOf('sh ./backup.sh');
+  const stamp = source.indexOf('michel_write_deployed_stamp "$TARGET"');
+  const consumeGate = source.indexOf('michel_consume_deploy_approval "$TARGET"');
+  assert.ok(approvalGate >= 0 && ciGate > approvalGate, 'CI was checked before exact human approval');
+  assert.ok(claimGate > ciGate && backup > claimGate, 'approval was not claimed before the first mutation');
+  assert.ok(consumeGate > stamp, 'approval was consumed before successful deployment stamping');
+  assert.match(source, /CI can prove a candidate; it cannot authorize production/);
+});
+
+test('operator approval script is explicit, exact-SHA-only and writes ignored non-secret state', async () => {
+  const source = await readFile(resolve('docs/deploy/approve-deploy.sh'), 'utf8');
+  const ignore = await readFile(resolve('.gitignore'), 'utf8');
+  assert.match(source, /michel_require_git_commit/);
+  assert.match(source, /APPROVE DEPLOY \$\{TARGET\}/);
+  assert.match(source, /approvedBy: 'Cristian'/);
+  assert.match(source, /\.swarm\/deploy-approval\.json/);
+  assert.doesNotMatch(source, /PASSWORD|TOKEN|SECRET|\.env/);
+  assert.match(ignore, /^\.swarm\/$/m);
+});
+
 test('the existing gauntlet runs exact-candidate Docker and ephemeral-runtime provenance checks', async () => {
   const workflow = await readFile(resolve('.github/workflows/gauntlet.yml'), 'utf8');
   const verifier = await readFile(resolve('docs/deploy/verify-release-provenance-ci.sh'), 'utf8');
