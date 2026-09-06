@@ -215,6 +215,74 @@ The bootstrap validator rejects full-lifecycle receipts, blocked receipts,
 wrong or stale SHAs, wrong scope, malformed/integrity-mismatched receipts, and
 any receipt claiming Quality can grant deployment authority.
 
+### Canonical Factory receipt consumer (Phase 7 integration)
+
+Michel consumes **Factory Quality 1.2.0**, pinned to
+`crizpy7-sketch/Shia-factory@d380dfbd4cc65466f6757c680e654a967d2749e0`, tree
+`6c01a39ded60161082084e7d4b50546eb36b1021`. Factory source stays read-only.
+Historical Michel-created scoped JSON from candidate `c6a5b663…` was not a
+canonical Factory receipt and must be regenerated. Schema validity and a file
+digest alone never establish provenance or authorize deployment.
+
+`factory-quality-consumer.ts` is a consumer adapter, not an evaluator. It:
+
+1. Checks the clean exact Factory source pin and compiles it into an owned
+   disposable directory; existing compiled output is not trusted.
+2. Gets the expected task, repository, candidate, scope, full task policy and
+   evidence dependencies from independently configured Shia Core context.
+3. Calls Factory `admitQualityGateInput()` against authorized execution sources.
+4. Calls `revalidateStoredQualityGateReceipt()` to rerun the permanent evaluator
+   and compare the complete stored receipt with the expected policy/evidence.
+5. Calls Factory `createTrustedQualityGateReceiptResolver()` and checks the
+   Factory's in-memory verified-resolution identity before accepting readiness.
+
+The context is an **operator/control-plane owned executable module** at
+`<operational-root>/.swarm/quality-governance/context.mjs`. It exports
+`createContext(factory, targetSha)`, returning `{input, dependencies}` using the
+existing Factory types. `input` must be the independently stored Shia Core task
+snapshot; dependencies must resolve execution records from authorized collectors.
+Neither may be assembled from the submitted receipt's claims. Expected repository,
+project, task, exact SHA, branch, T3 risk, independent review, security requirements
+and pre-deployment scope are checked. The complete expected policy is re-evaluated,
+so a correctly minted receipt for a weaker policy cannot be substituted. The
+snapshot expires after 24 hours (future skew limited to five minutes).
+
+The local operator account and its filesystem permissions remain the operational
+trust boundary, as with the existing one-shot deployment approval. The consumer
+does not defend against an operator who can rewrite its own executable context,
+compiler installation or application code. Context modules must be ordinary,
+operator/root-owned files without group/other write permission or symlinked paths.
+No production context or invented evidence resolver is installed by this change.
+Missing context, unavailable trusted sources or mismatched revalidation returns
+`needs-evidence`/`blocked`, never a JSON-only PASS.
+
+For disposable development/CI, check out the exact Factory commit at
+`.swarm/factory-source` and run `sh docs/deploy/prepare-factory-quality.sh` before
+Michel typecheck/tests. This installs the existing locked compiler dependencies
+and generates declarations under ignored `.swarm/factory-types`; it does not
+change Factory source. The Docker build and uploaded gauntlet artifact exclude
+these host-side Factory dependencies and operational context. The application
+runtime does not need the Factory source or compiler.
+
+Deterministic integration tests invoke the actual pinned admission, evaluator,
+stored-receipt revalidation and resolver APIs, including a fresh shell process.
+Their synthetic execution records and evaluator-minted PASS receipts are explicitly
+**test fixtures**, not Michel certification or production evidence. The retained
+`receipt-consumer-integration.json` identifies that scope and the actual tested SHA.
+The ordinary gauntlet still runs all nine challengers, and the existing Docker
+provenance script still proves the disposable readiness/restore/rollback/performance
+behavior. No ESLint configuration has been introduced: the canonical Factory
+automated gate requires lint evidence, so unavailable lint remains a real Quality
+evidence gap. A green Michel gauntlet cannot silently waive that Factory requirement.
+
+Even a verified pre-deployment Quality PASS has
+`qualityEvidenceGrantsActionAuthority: false`. The bootstrap still separately
+requires Cristian's exact-SHA, Quality/restore-digest-bound one-shot approval,
+then its existing CI, backup, health, provenance and observation checks. CI tests
+do not create production approval. Full-lifecycle Quality remains a separate
+post-observation evaluation. Phase 7 stays **1/4**, Core v2 **31/41 = 75.61%**;
+no merge, timer operation, production deployment or Shelf admission is performed.
+
 ### Safety properties
 
 - **Refuses to run on a dirty working tree** — local edits on the box are never

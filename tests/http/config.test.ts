@@ -297,7 +297,7 @@ test('bootstrap candidate outcome requires backup and exact three-way provenance
   assert.notEqual(result('pass', releaseSha, otherSha).status, 0, 'OCI mismatch was accepted');
 });
 
-test('bootstrap evidence admission binds an integrity-checked Quality PASS and real-backup restore', async (t) => {
+test('bootstrap rejects historical JSON-only Quality claims while preserving restore integrity', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'michel-bootstrap-evidence-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const quality = join(directory, 'quality.json');
@@ -330,7 +330,7 @@ test('bootstrap evidence admission binds an integrity-checked Quality PASS and r
     deployLib, quality, releaseSha, qualityDigest);
   const restoreResult = () => shell('. "$1"; michel_validate_real_backup_restore_evidence "$2" "$3"',
     deployLib, restore, restoreDigest);
-  assert.equal(qualityResult().status, 0, qualityResult().stderr);
+  assert.notEqual(qualityResult().status, 0, 'historical hand-authored JSON was trusted without Factory context');
   assert.equal(restoreResult().status, 0, restoreResult().stderr);
   assert.notEqual(shell('. "$1"; michel_validate_quality_receipt "$2" "$3" "$4"',
     deployLib, quality, otherSha, qualityDigest).status, 0, 'Quality receipt passed another SHA');
@@ -364,10 +364,11 @@ test('pre-deployment readiness and full lifecycle Quality receipts remain separa
   const validator = await readFile(deployLib, 'utf8');
   const bootstrap = await readFile(resolve('docs/deploy/bootstrap-gated-release.sh'), 'utf8');
   const documentation = await readFile(resolve('docs/deploy/README.md'), 'utf8');
-  assert.match(validator, /pre-deployment-release-readiness/);
-  assert.match(validator, /not-evaluated-pre-deployment/);
-  assert.match(validator, /required-after-production-observation/);
-  assert.match(validator, /qualityEvidenceGrantsActionAuthority !== false/);
+  assert.match(validator, /verify-factory-quality\.ts/);
+  const consumer = await readFile(resolve('docs/deploy/factory-quality-consumer.ts'), 'utf8');
+  assert.match(consumer, /pre-deployment-release-readiness/);
+  assert.match(consumer, /revalidateStoredQualityGateReceipt/);
+  assert.match(consumer, /createTrustedQualityGateReceiptResolver/);
   assert.match(bootstrap, /pre-deployment release-readiness Quality PASS/);
   assert.match(documentation, /these are separate receipts/i);
   assert.match(documentation, /\*\*Full lifecycle\*\*/i);

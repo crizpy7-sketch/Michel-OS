@@ -51,6 +51,18 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Read-only canonical Factory dependency. No Factory push/publication workflow.
+      - name: Checkout approved Factory Quality pin
+        uses: actions/checkout@v4
+        with:
+          repository: crizpy7-sketch/Shia-factory
+          ref: d380dfbd4cc65466f6757c680e654a967d2749e0
+          path: .swarm/factory-source
+          persist-credentials: false
+
+      - name: Install pinned Factory compiler dependencies
+        run: sh docs/deploy/prepare-factory-quality.sh
+
       - name: Run the gauntlet
         run: npm run gauntlet
 
@@ -72,7 +84,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gauntlet-report
-          path: .swarm/
+          path: |
+            .swarm/
+            !.swarm/factory-source/**
+            !.swarm/factory-types/**
+            !.swarm/quality-governance/**
           if-no-files-found: warn
           retention-days: 14
 

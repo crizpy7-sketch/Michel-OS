@@ -118,32 +118,12 @@ michel_validate_quality_receipt() {
   expected_digest="$(michel_normalize_digest "$3")" || return 1
   actual_digest="$(michel_file_sha256 "$receipt")" || return 1
   [ "$actual_digest" = "$expected_digest" ] || return 1
-  node - "$receipt" "$target" <<'NODE'
-const fs = require('node:fs');
-const [path, target] = process.argv.slice(2);
-let value;
-try { value = JSON.parse(fs.readFileSync(path, 'utf8')); } catch { process.exit(1); }
-const crypto = require('node:crypto');
-const expectedScopeBinding = typeof value?.receiptId === 'string'
-  ? crypto.createHash('sha256').update(`${value.receiptId}:pre-deployment-release-readiness:${target}`).digest('hex')
-  : '';
-if (value?.schemaVersion !== '1.1.0' ||
-    value?.evaluationScope !== 'pre-deployment-release-readiness' ||
-    value?.receiptStatus !== 'current' ||
-    value?.repository !== 'crizpy7-sketch/Michel-OS' ||
-    value?.candidateSha?.toLowerCase() !== target || value?.finalState !== 'pass' ||
-    typeof value?.receiptId !== 'string' || !/^[0-9a-f]{64}$/i.test(value.receiptId) ||
-    value?.scopeBindingId !== expectedScopeBinding ||
-    typeof value?.evaluatedAt !== 'string' || Number.isNaN(Date.parse(value.evaluatedAt)) ||
-    value?.scopeStatus?.productionDeploymentObservation !== 'not-evaluated-pre-deployment' ||
-    value?.scopeStatus?.fullLifecycleEvaluation !== 'required-after-production-observation' ||
-    value?.scopeStatus?.cristianApproval !== 'required-separately' ||
-    value?.scopeStatus?.deploymentAuthority !== 'not-granted' ||
-    value?.controlPlane?.authority !== 'shia-core' ||
-    value?.controlPlane?.qualityGateMayAcceptTask !== false ||
-    value?.controlPlane?.gstackMayAcceptTask !== false ||
-    value?.controlPlane?.qualityEvidenceGrantsActionAuthority !== false) process.exit(1);
-NODE
+  # Tool/context paths come from the operator's invocation, never the receipt.
+  tool_root="${4:-$(git rev-parse --show-toplevel 2>/dev/null)}" || return 1
+  operational_root="${5:-${MICHEL_OPERATIONAL_ROOT:-$tool_root}}"
+  [ -f "$tool_root/docs/deploy/verify-factory-quality.ts" ] || return 1
+  node --experimental-strip-types "$tool_root/docs/deploy/verify-factory-quality.ts" \
+    "$receipt" "$target" "$expected_digest" "$operational_root"
 }
 
 michel_normalize_digest() {
