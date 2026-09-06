@@ -79,17 +79,24 @@ jobs:
         if: always()
         run: node .github/scripts/gauntlet-summary.mjs >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload gauntlet report
+      - name: Verify required gauntlet reports
         if: always()
+        id: required-reports
+        env:
+          MICHEL_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node .github/scripts/verify-gauntlet-reports.mjs
+
+      - name: Upload gauntlet report
+        if: always() && steps.required-reports.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: gauntlet-report
+          # Include hidden files only at these two exact paths; never upload .swarm/ wholesale.
           path: |
-            .swarm/
-            !.swarm/factory-source/**
-            !.swarm/factory-types/**
-            !.swarm/quality-governance/**
-          if-no-files-found: warn
+            .swarm/gauntlet-report.json
+            .swarm/receipt-consumer-integration.json
+          include-hidden-files: true
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload release-provenance evidence
