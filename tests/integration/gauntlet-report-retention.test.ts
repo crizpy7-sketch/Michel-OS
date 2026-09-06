@@ -8,13 +8,16 @@ import { join, resolve } from 'node:path';
 
 const script = resolve('.github/scripts/verify-gauntlet-reports.mjs');
 const sha = 'a'.repeat(40);
-const paths = ['.swarm/gauntlet-report.json', '.swarm/receipt-consumer-integration.json'];
+const paths = ['.swarm/gauntlet-report.json', '.swarm/receipt-consumer-integration.json', '.swarm/lint-report.json'];
 async function fixture(run: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'michel-report-retention-'));
   try {
     await mkdir(join(root, '.swarm'));
     await writeFile(join(root, paths[0]!), JSON.stringify({ verdict: 'PASSED', rounds: [] }));
     await writeFile(join(root, paths[1]!), JSON.stringify({ michelCandidateSha: sha, applicationCertification: false }));
+    await writeFile(join(root, paths[2]!), JSON.stringify({ kind: 'lint-execution', candidateSha: sha, exactCandidate: true,
+      command: 'npm run lint', exitCode: 1, checkedFiles: [{ path: 'fixture.ts' }], configuration: [{ path: 'eslint.config.mjs' }],
+      diagnostics: [], evidenceState: 'raw-unverified', qualityEvidenceGrantsActionAuthority: false }));
     await run(root);
   } finally { await rm(root, { recursive: true, force: true }); }
 }
@@ -25,7 +28,7 @@ const blocked = (result: ReturnType<typeof verify>) => {
   assert.equal(result.status, 1, result.stderr); assert.equal(result.stdout, '');
 };
 
-test('retention preflight verifies exactly two hidden reports and ignores operational files', async () => {
+test('retention preflight verifies the original reports plus lint, including failed lint, and ignores operational files', async () => {
   await fixture(async root => {
     await mkdir(join(root, '.swarm/factory-source'));
     await mkdir(join(root, '.swarm/quality-governance'));
@@ -76,6 +79,13 @@ test('retention rejects stale candidate identity', async () => {
 });
 test('retention rejects a missing exact CI candidate', async () => {
   await fixture(async root => { blocked(verify(root, '')); });
+});
+test('retention rejects a stale lint report while preserving the two original report checks', async () => {
+  await fixture(async root => {
+    const path = join(root, paths[2]!);
+    const report = JSON.parse(await readFile(path, 'utf8'));
+    report.candidateSha = 'b'.repeat(40); await writeFile(path, JSON.stringify(report)); blocked(verify(root));
+  });
 });
 test('CI upload allowlist excludes operational directories and depends on both reports verifying', async () => {
   const workflow = await readFile(resolve('.github/workflows/gauntlet.yml'), 'utf8');

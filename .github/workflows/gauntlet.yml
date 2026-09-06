@@ -63,10 +63,21 @@ jobs:
       - name: Install pinned Factory compiler dependencies
         run: sh docs/deploy/prepare-factory-quality.sh
 
+      - name: Run lint
+        id: lint
+        env:
+          MICHEL_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: npm run lint
+
+      # Preserve independent verification and artifacts even when lint finds defects.
+      # No continue-on-error: lint's real failure still makes the job fail.
       - name: Run the gauntlet
+        if: ${{ !cancelled() && steps.lint.outcome != 'skipped' }}
+        id: gauntlet
         run: npm run gauntlet
 
       - name: Verify Docker release provenance
+        if: ${{ !cancelled() && steps.gauntlet.outcome == 'success' }}
         env:
           MICHEL_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           MICHEL_SOURCE_REPOSITORY: https://github.com/${{ github.repository }}
@@ -91,10 +102,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gauntlet-report
-          # Include hidden files only at these two exact paths; never upload .swarm/ wholesale.
+          # Include hidden files only at these exact reports; never upload .swarm/ wholesale.
           path: |
             .swarm/gauntlet-report.json
             .swarm/receipt-consumer-integration.json
+            .swarm/lint-report.json
           include-hidden-files: true
           if-no-files-found: error
           retention-days: 14
