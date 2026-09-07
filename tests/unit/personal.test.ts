@@ -16,7 +16,6 @@ import {
   clusterErrandsByLocation,
   completeReminder,
   createErrand,
-  createReminder,
   dismissReminder,
   dueReminders,
   groupByStore,

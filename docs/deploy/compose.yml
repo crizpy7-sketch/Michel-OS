@@ -19,6 +19,9 @@ services:
     build:
       context: ../..
       dockerfile: docs/deploy/Dockerfile
+      args:
+        RELEASE_SHA: ${MICHEL_RELEASE_SHA:?MICHEL_RELEASE_SHA must be the exact target Git SHA}
+        SOURCE_REPOSITORY: https://github.com/crizpy7-sketch/Michel-OS
     restart: unless-stopped
     env_file:
       - .env

@@ -31,7 +31,9 @@ export async function render(mount) {
   appearanceCard.classList.add('appearance-card');
 
   const signOut = h('button', { class: 'btn btn--danger btn--block', type: 'button', onClick: async () => {
-    try { await api.post('/api/auth/logout', {}); } catch {}
+    try { await api.post('/api/auth/logout', {}); } catch {
+      // Preserve local reset/navigation on failure; this does not prove server logout.
+    }
     reset(); location.href = '/';
   } }, 'Sign out');
 

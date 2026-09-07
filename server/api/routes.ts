@@ -17,7 +17,7 @@
  * client that could name its own entity list could name `expense`.
  */
 
-import { Router, json, noContent, problem, redirect, type Reply } from '../http/core.ts';
+import { Router, json, noContent, problem } from '../http/core.ts';
 import {
   created, fromIssues, guard, guardUser, instantField, int, ok, optionalStr,
   requireBusiness, str, type AppEnv, type AuthedContext,
@@ -36,7 +36,7 @@ import {
   setShoppingStatus, snoozeReminder,
 } from '../../domains/personal/lists.ts';
 import {
-  acceptSwap, analyzeSchedule, approveSwap, assignShift, publishSchedule, reviewTimeOff,
+  analyzeSchedule, assignShift, publishSchedule,
 } from '../../domains/shia-baby/staffing.ts';
 import {
   estimateTaxSetAside, lowStockAlerts, recordExpense, recordMovement, recordSale,
@@ -695,7 +695,8 @@ export function buildApiRouter(env: AppEnv): Router {
       });
       if (!result.ok) return fromIssues(result.issues);
 
-      const { id: _discard, ...withoutId } = result.value;
+      const withoutId: Omit<typeof result.value, 'id'> & { id?: string } = { ...result.value };
+      delete withoutId.id;
       const saved = await ctx.env.db.transaction((tx) => repo.insertShoppingItem(tx, withoutId));
       return created(saved);
     }));
@@ -769,7 +770,8 @@ export function buildApiRouter(env: AppEnv): Router {
       });
       if (!result.ok) return fromIssues(result.issues);
 
-      const { id: _discard, ...withoutId } = result.value;
+      const withoutId: Omit<typeof result.value, 'id'> & { id?: string } = { ...result.value };
+      delete withoutId.id;
       return created(await ctx.env.db.transaction((tx) => repo.insertErrand(tx, withoutId)));
     }));
 
@@ -834,7 +836,8 @@ export function buildApiRouter(env: AppEnv): Router {
       });
       if (!result.ok) return fromIssues(result.issues);
 
-      const { id: _discard, ...withoutId } = result.value;
+      const withoutId: Omit<typeof result.value, 'id'> & { id?: string } = { ...result.value };
+      delete withoutId.id;
       return created(await ctx.env.db.transaction((tx) => repo.insertReminder(tx, withoutId)));
     }));
 
@@ -852,7 +855,8 @@ export function buildApiRouter(env: AppEnv): Router {
       const saved = await repo.saveReminder(tx, result.value.reminder);
       let next = null;
       if (result.value.next !== null) {
-        const { id: _drop, ...rest } = result.value.next;
+        const rest: Omit<typeof result.value.next, 'id'> & { id?: string } = { ...result.value.next };
+        delete rest.id;
         next = await repo.insertReminder(tx, rest);
       }
       return { reminder: saved, next };
@@ -1371,7 +1375,8 @@ export function buildApiRouter(env: AppEnv): Router {
       if (!result.ok) return fromIssues(result.issues);
 
       return created(await ctx.env.db.transaction(async (tx) => {
-        const { id: _drop, ...movement } = result.value.movement;
+        const movement: Omit<typeof result.value.movement, 'id'> & { id?: string } = { ...result.value.movement };
+        delete movement.id;
         await repo.insertMovement(tx, ctx.actor.household.id, movement);
         const saved = await repo.saveProduct(tx, ctx.actor.household.id, result.value.product);
         return { product: saved };
@@ -1419,7 +1424,8 @@ export function buildApiRouter(env: AppEnv): Router {
       if (!result.ok) return fromIssues(result.issues);
 
       return created(await ctx.env.db.transaction(async (tx) => {
-        const { id: _drop, ...sale } = result.value.sale;
+        const sale: Omit<typeof result.value.sale, 'id'> & { id?: string } = { ...result.value.sale };
+        delete sale.id;
         const saved = await repo.insertSale(tx, ctx.actor.household.id, sale);
         // The stock movements the sale implies, applied in the same transaction.
         for (const movement of result.value.movements) {
@@ -1457,7 +1463,8 @@ export function buildApiRouter(env: AppEnv): Router {
       });
       if (!result.ok) return fromIssues(result.issues);
 
-      const { id: _drop, ...expense } = result.value;
+      const expense: Omit<typeof result.value, 'id'> & { id?: string } = { ...result.value };
+      delete expense.id;
       return created(await ctx.env.db.transaction((tx) =>
         repo.insertExpense(tx, ctx.actor.household.id, expense)));
     }));

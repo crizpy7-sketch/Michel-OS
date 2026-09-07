@@ -148,7 +148,11 @@ function renderScoreboard(round: RoundReport): void {
   console.log(rule('AGENT SCOREBOARD'));
   const byAgent = new Map<string, Finding[]>();
   for (const a of AGENTS) byAgent.set(a.id, []);
-  for (const r of round.results) for (const f of r.findings) byAgent.get(f.owner)?.push(f) ?? byAgent.set(f.owner, [f]);
+  for (const r of round.results) for (const f of r.findings) {
+    const findings = byAgent.get(f.owner);
+    if (findings === undefined) byAgent.set(f.owner, [f]);
+    else findings.push(f);
+  }
 
   for (const [agentId, findings] of byAgent) {
     const agent = agentById(agentId);

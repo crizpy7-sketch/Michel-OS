@@ -52,7 +52,7 @@ async function request(method, path, body) {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  } catch (cause) {
+  } catch {
     // A network failure is not a server error and must not be reported as one:
     // "Something went wrong" sends people to look for a bug that is not there,
     // when the answer is that the phone left the wifi.

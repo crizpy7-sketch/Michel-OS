@@ -1,0 +1,4 @@
+# Factory is a disposable host-side verification dependency, not application image content.
+.swarm/factory-source
+.swarm/factory-types
+.swarm/quality-governance

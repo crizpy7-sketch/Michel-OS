@@ -1,0 +1,581 @@
+{
+  "authorizationReference": "https://github.com/crizpy7-sketch/Michel-OS/pull/20#issuecomment-5572242726",
+  "factoryPin": "d380dfbd4cc65466f6757c680e654a967d2749e0",
+  "findings": [
+    {
+      "behaviorAssessment": "Reject 0..8, 11, 12, 14..31, 127; preserve TAB/LF/CR, C1 and other code units. No security-rule waiver; correct the inaccurate original C1 comment.",
+      "change": "Replace the control-character regex with an explicit UTF-16 scan over the same code-unit set.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-01",
+      "originalDiagnostic": {
+        "column": 23,
+        "endColumn": 71,
+        "endLine": 268,
+        "fatal": false,
+        "line": 268,
+        "message": "Unexpected control character(s) in regular expression: \\x00, \\x08, \\x0b, \\x0c, \\x0e, \\x1f.",
+        "path": "domains/ai/validator.ts",
+        "ruleId": "no-control-regex",
+        "severity": 2
+      },
+      "verification": "tests/integration/lint-browser-remediation.test.ts: all 65,536 UTF-16 code units through actual validateAction; existing AI adversarial suite"
+    },
+    {
+      "behaviorAssessment": "Erased TypeScript import has no runtime effect; the module's other imports remain.",
+      "change": "Remove unused type-only Instant import.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-02",
+      "originalDiagnostic": {
+        "column": 3,
+        "endColumn": 10,
+        "endLine": 31,
+        "fatal": false,
+        "line": 31,
+        "message": "'Instant' is defined but never used.",
+        "path": "domains/scheduling/conflicts.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "TypeScript and recurrence/conflict suites"
+    },
+    {
+      "behaviorAssessment": "Both try and catch assign formatter before use. Intl construction, catch fallback and cache writes remain in the same order.",
+      "change": "Remove redundant null initializer only.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-03",
+      "originalDiagnostic": {
+        "column": 7,
+        "endColumn": 44,
+        "endLine": 110,
+        "fatal": false,
+        "line": 110,
+        "message": "The value assigned to 'formatter' is not used in subsequent statements.",
+        "path": "domains/scheduling/recurrence.ts",
+        "ruleId": "no-useless-assignment",
+        "severity": 2
+      },
+      "verification": "Existing recurrence suite including unknown timezone fallback"
+    },
+    {
+      "behaviorAssessment": "The same rejection is caught and the same offline ApiError is thrown; fetch options and response handling remain intact.",
+      "change": "Remove unused catch binding.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-04",
+      "originalDiagnostic": {
+        "column": 12,
+        "endColumn": 17,
+        "endLine": 55,
+        "fatal": false,
+        "line": 55,
+        "message": "'cause' is defined but never used.",
+        "path": "public/lib/api.js",
+        "ruleId": "no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual API-module success/auth/network regression and isolated browser checks"
+    },
+    {
+      "behaviorAssessment": "Retain best-effort persistence and unconditional application of the preference. A rationale comment is not a rule suppression or exception.",
+      "change": "Document intentional storage-failure catch.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-05",
+      "originalDiagnostic": {
+        "column": 58,
+        "endColumn": 60,
+        "endLine": 31,
+        "fatal": false,
+        "line": 31,
+        "message": "Empty block statement.",
+        "path": "public/lib/theme.js",
+        "ruleId": "no-empty",
+        "severity": 2
+      },
+      "verification": "Isolated browser storage-denied and successful appearance checks"
+    },
+    {
+      "behaviorAssessment": "The argument was a local variable read with no side effects; capture still constructs the same form and submit handler.",
+      "change": "Remove unused private capture parameter and the inert argument at its only call.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-06",
+      "originalDiagnostic": {
+        "column": 18,
+        "endColumn": 23,
+        "endLine": 23,
+        "fatal": false,
+        "line": 23,
+        "message": "'mount' is defined but never used.",
+        "path": "public/views/inbox.js",
+        "ruleId": "no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Isolated browser inbox rendering/capture check"
+    },
+    {
+      "behaviorAssessment": "Retain the existing local reset and navigation after a failed server request; this never proves server-session invalidation.",
+      "change": "Document intentional logout-failure catch.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-07",
+      "originalDiagnostic": {
+        "column": 59,
+        "endColumn": 61,
+        "endLine": 34,
+        "fatal": false,
+        "line": 34,
+        "message": "Empty block statement.",
+        "path": "public/views/more.js",
+        "ruleId": "no-empty",
+        "severity": 2
+      },
+      "verification": "Isolated browser failed-logout navigation/reset check"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-08",
+      "originalDiagnostic": {
+        "column": 17,
+        "endColumn": 22,
+        "endLine": 308,
+        "fatal": false,
+        "line": 308,
+        "message": "'_drop' is assigned a value but never used.",
+        "path": "server/api/assistant-actions.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-09",
+      "originalDiagnostic": {
+        "column": 17,
+        "endColumn": 22,
+        "endLine": 322,
+        "fatal": false,
+        "line": 322,
+        "message": "'_drop' is assigned a value but never used.",
+        "path": "server/api/assistant-actions.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-10",
+      "originalDiagnostic": {
+        "column": 17,
+        "endColumn": 22,
+        "endLine": 344,
+        "fatal": false,
+        "line": 344,
+        "message": "'_drop' is assigned a value but never used.",
+        "path": "server/api/assistant-actions.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-11",
+      "originalDiagnostic": {
+        "column": 17,
+        "endColumn": 22,
+        "endLine": 379,
+        "fatal": false,
+        "line": 379,
+        "message": "'_drop' is assigned a value but never used.",
+        "path": "server/api/assistant-actions.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-12",
+      "originalDiagnostic": {
+        "column": 17,
+        "endColumn": 22,
+        "endLine": 397,
+        "fatal": false,
+        "line": 397,
+        "message": "'_drop' is assigned a value but never used.",
+        "path": "server/api/assistant-actions.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Other imports from http/core remain, preserving module evaluation. No invocation was removed.",
+      "change": "Remove unused named redirect import.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-13",
+      "originalDiagnostic": {
+        "column": 44,
+        "endColumn": 52,
+        "endLine": 20,
+        "fatal": false,
+        "line": 20,
+        "message": "'redirect' is defined but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "TypeScript, HTTP suite and gauntlet"
+    },
+    {
+      "behaviorAssessment": "Type-only import has no runtime effect.",
+      "change": "Remove unused type Reply import.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-14",
+      "originalDiagnostic": {
+        "column": 59,
+        "endColumn": 64,
+        "endLine": 20,
+        "fatal": false,
+        "line": 20,
+        "message": "'Reply' is defined but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "TypeScript"
+    },
+    {
+      "behaviorAssessment": "Other staffing imports retain module evaluation; no function call was removed.",
+      "change": "Remove unused named acceptSwap import.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-15",
+      "originalDiagnostic": {
+        "column": 3,
+        "endColumn": 13,
+        "endLine": 39,
+        "fatal": false,
+        "line": 39,
+        "message": "'acceptSwap' is defined but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "TypeScript and staffing/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Other staffing imports retain module evaluation; no function call was removed.",
+      "change": "Remove unused named approveSwap import.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-16",
+      "originalDiagnostic": {
+        "column": 32,
+        "endColumn": 43,
+        "endLine": 39,
+        "fatal": false,
+        "line": 39,
+        "message": "'approveSwap' is defined but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "TypeScript and staffing/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Other staffing imports retain module evaluation; no function call was removed.",
+      "change": "Remove unused named reviewTimeOff import.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-17",
+      "originalDiagnostic": {
+        "column": 75,
+        "endColumn": 88,
+        "endLine": 39,
+        "fatal": false,
+        "line": 39,
+        "message": "'reviewTimeOff' is defined but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "TypeScript and staffing/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-18",
+      "originalDiagnostic": {
+        "column": 19,
+        "endColumn": 27,
+        "endLine": 698,
+        "fatal": false,
+        "line": 698,
+        "message": "'_discard' is assigned a value but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-19",
+      "originalDiagnostic": {
+        "column": 19,
+        "endColumn": 27,
+        "endLine": 772,
+        "fatal": false,
+        "line": 772,
+        "message": "'_discard' is assigned a value but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-20",
+      "originalDiagnostic": {
+        "column": 19,
+        "endColumn": 27,
+        "endLine": 837,
+        "fatal": false,
+        "line": 837,
+        "message": "'_discard' is assigned a value but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-21",
+      "originalDiagnostic": {
+        "column": 21,
+        "endColumn": 26,
+        "endLine": 855,
+        "fatal": false,
+        "line": 855,
+        "message": "'_drop' is assigned a value but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-22",
+      "originalDiagnostic": {
+        "column": 21,
+        "endColumn": 26,
+        "endLine": 1374,
+        "fatal": false,
+        "line": 1374,
+        "message": "'_drop' is assigned a value but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-23",
+      "originalDiagnostic": {
+        "column": 21,
+        "endColumn": 26,
+        "endLine": 1422,
+        "fatal": false,
+        "line": 1422,
+        "message": "'_drop' is assigned a value but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Domain constructors/row values at these call sites produce plain records; copy/delete preserves remaining keys/values/order and leaves the original result untouched. No getters/proxies occur at these internal creation boundaries. Optional-id type is explicit; database-generated identity behavior remains unchanged.",
+      "change": "Copy the concrete domain result, then delete id only from the fresh copy.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-24",
+      "originalDiagnostic": {
+        "column": 19,
+        "endColumn": 24,
+        "endLine": 1460,
+        "fatal": false,
+        "line": 1460,
+        "message": "'_drop' is assigned a value but never used.",
+        "path": "server/api/routes.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Actual HTTP domain-create/UUID/payload regressions, assistant/domain/database/HTTP suites"
+    },
+    {
+      "behaviorAssessment": "Preserve all other fields, original record and stale-SHA test semantics; do not disable admission or change the Factory.",
+      "change": "Copy the trusted-record test fixture and delete only integrityDigest from that new object.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-25",
+      "originalDiagnostic": {
+        "column": 28,
+        "endColumn": 29,
+        "endLine": 91,
+        "fatal": false,
+        "line": 91,
+        "message": "'_' is assigned a value but never used.",
+        "path": "tests/integration/factory-quality-consumer.test.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Existing actual pinned Factory consumer tests"
+    },
+    {
+      "behaviorAssessment": "Other imports retain module evaluation; test assertions and test execution remain unchanged.",
+      "change": "Remove unused named createReminder import from test.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-26",
+      "originalDiagnostic": {
+        "column": 3,
+        "endColumn": 17,
+        "endLine": 19,
+        "fatal": false,
+        "line": 19,
+        "message": "'createReminder' is defined but never used.",
+        "path": "tests/unit/personal.test.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "Personal domain suite"
+    },
+    {
+      "behaviorAssessment": "Both successful parse and catch assign locked before its first read; file reads, parse and failure reporting are retained.",
+      "change": "Remove redundant locked = null initializer only.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-27",
+      "originalDiagnostic": {
+        "column": 9,
+        "endColumn": 30,
+        "endLine": 87,
+        "fatal": false,
+        "line": 87,
+        "message": "The value assigned to 'locked' is not used in subsequent statements.",
+        "path": "tools/swarm/challengers.ts",
+        "ruleId": "no-useless-assignment",
+        "severity": 2
+      },
+      "verification": "Contract-integrity challenger and gauntlet"
+    },
+    {
+      "behaviorAssessment": "In the original non-Unicode JavaScript regex, \\\\Z already means literal Z, not end-of-input. Preserve that actual behavior; an end-anchor behavior change is outside this task.",
+      "change": "Remove the redundant escape from the literal Z alternative.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-28",
+      "originalDiagnostic": {
+        "column": 106,
+        "endColumn": 107,
+        "endLine": 230,
+        "fatal": false,
+        "line": 230,
+        "message": "Unnecessary escape character: \\Z.",
+        "path": "tools/swarm/challengers.ts",
+        "ruleId": "no-useless-escape",
+        "severity": 2
+      },
+      "verification": "Exact old/new regex parity assessment; full unit-tests challenger"
+    },
+    {
+      "behaviorAssessment": "The interface and callers remain unchanged; supplied context was never read; probe import/run/error handling stay intact.",
+      "change": "Remove unused ctx parameter from the private probe wrapper implementation.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-29",
+      "originalDiagnostic": {
+        "column": 15,
+        "endColumn": 18,
+        "endLine": 430,
+        "fatal": false,
+        "line": 430,
+        "message": "'ctx' is defined but never used.",
+        "path": "tools/swarm/challengers.ts",
+        "ruleId": "@typescript-eslint/no-unused-vars",
+        "severity": 2
+      },
+      "verification": "All three runtime probe challengers"
+    },
+    {
+      "behaviorAssessment": "Preserve insertion order and append once per finding; never drop push/set side effects. Map values are locally initialized arrays, not nullable values.",
+      "change": "Expand the side-effect expression into explicit if/else.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-30",
+      "originalDiagnostic": {
+        "column": 62,
+        "endColumn": 121,
+        "endLine": 151,
+        "fatal": false,
+        "line": 151,
+        "message": "Expected an assignment or function call and instead saw an expression.",
+        "path": "tools/swarm/gauntlet.ts",
+        "ruleId": "@typescript-eslint/no-unused-expressions",
+        "severity": 2
+      },
+      "verification": "Full gauntlet scoreboard and retained original ownership warnings"
+    },
+    {
+      "behaviorAssessment": "Preserve the original single-numeric SGR subset, literal/unmatched ESC and all unsupported sequences; do not broaden to a general ANSI stripper.",
+      "change": "Split on ESC and remove only an anchored [digits+m prefix from subsequent segments.",
+      "disposition": "behavior-preserving-correction",
+      "id": "LR-31",
+      "originalDiagnostic": {
+        "column": 29,
+        "endColumn": 44,
+        "endLine": 49,
+        "fatal": false,
+        "line": 49,
+        "message": "Unexpected control character(s) in regular expression: \\x1b.",
+        "path": "tools/swarm/ui.ts",
+        "ruleId": "no-control-regex",
+        "severity": 2
+      },
+      "verification": "Actual exported pad regression: 256 prefix code units and explicit valid/malformed/multiple-sequence cases"
+    }
+  ],
+  "limitations": [
+    "Exact amended candidate, execution outcomes and review are recorded by the candidate-bound CI/PR evidence; this disposition document is not a Quality PASS receipt.",
+    "The original literal-Z TAP parsing behavior remains; changing it to end-of-input requires separate authorization.",
+    "Existing best-effort logout failure does not prove server logout; behavior is preserved, not newly certified.",
+    "The previous temporary ledger and historical SQL closeout remain unavailable; no serialized historical approval was promoted. The new task uses only the current explicit authorization.",
+    "sharp remains a separate unwaived dependency finding; read-only assessment only."
+  ],
+  "predecessorCheckpoint": "https://github.com/crizpy7-sketch/Michel-OS/pull/20#issuecomment-5566978469",
+  "progress": {
+    "core": "31/41",
+    "percent": 75.61,
+    "phase7": "1/4"
+  },
+  "schemaVersion": "1.0.0",
+  "scope": "One behavior-preserving implementation pass; zero automatic post-review repairs; no lint exceptions or dependency upgrades.",
+  "startingCandidate": "ac2e4ed7070d0782ed447d8ab0a985750b0ea9ac",
+  "taskId": "phase7-michel-lint-remediation"
+}

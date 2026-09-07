@@ -35,6 +35,11 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # pull_request's default checkout is a synthetic merge ref. Quality
+          # evidence must instead bind to the exact reviewed head candidate.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
 
       # Node 22 strips the TypeScript types natively; there is no bundler and
       # no transpile step, so this is the whole toolchain.
@@ -46,8 +51,38 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Read-only canonical Factory dependency. No Factory push/publication workflow.
+      - name: Checkout approved Factory Quality pin
+        uses: actions/checkout@v4
+        with:
+          repository: crizpy7-sketch/Shia-factory
+          ref: d380dfbd4cc65466f6757c680e654a967d2749e0
+          path: .swarm/factory-source
+          persist-credentials: false
+
+      - name: Install pinned Factory compiler dependencies
+        run: sh docs/deploy/prepare-factory-quality.sh
+
+      - name: Run lint
+        id: lint
+        env:
+          MICHEL_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: npm run lint
+
+      # Preserve independent verification and artifacts even when lint finds defects.
+      # No continue-on-error: lint's real failure still makes the job fail.
       - name: Run the gauntlet
+        if: ${{ !cancelled() && steps.lint.outcome != 'skipped' }}
+        id: gauntlet
         run: npm run gauntlet
+
+      - name: Verify Docker release provenance
+        if: ${{ !cancelled() && steps.gauntlet.outcome == 'success' }}
+        env:
+          MICHEL_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          MICHEL_SOURCE_REPOSITORY: https://github.com/${{ github.repository }}
+          MICHEL_BASELINE_SHA: 50403bcd52425d3f49788905ebd81962647e2d39
+        run: sh docs/deploy/verify-release-provenance-ci.sh
 
       # Always: a failing run is exactly when the scoreboard is worth reading,
       # and the report is written on every verdict.
@@ -55,11 +90,40 @@ jobs:
         if: always()
         run: node .github/scripts/gauntlet-summary.mjs >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload gauntlet report
+      - name: Verify required gauntlet reports
         if: always()
+        id: required-reports
+        env:
+          MICHEL_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node .github/scripts/verify-gauntlet-reports.mjs
+
+      - name: Upload gauntlet report
+        if: always() && steps.required-reports.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: gauntlet-report
-          path: .swarm/
-          if-no-files-found: warn
+          # Include hidden files only at these exact reports; never upload .swarm/ wholesale.
+          path: |
+            .swarm/gauntlet-report.json
+            .swarm/receipt-consumer-integration.json
+            .swarm/lint-report.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release-provenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-provenance-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            .swarm/release-provenance-ci.json
+            .swarm/release-provenance-ci.sha256
+            .swarm/restore-drill-ci.json
+            .swarm/restore-drill-ci.sha256
+            .swarm/rollback-simulation-ci.json
+            .swarm/rollback-simulation-ci.sha256
+            .swarm/performance-smoke-ci.json
+            .swarm/performance-smoke-ci.sha256
+          if-no-files-found: error
           retention-days: 14

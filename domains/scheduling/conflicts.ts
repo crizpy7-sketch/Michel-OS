@@ -28,7 +28,6 @@ import type {
   Conflict,
   ConflictKind,
   ConflictRef,
-  Instant,
   Occurrence,
   ParticipantRole,
   Severity,

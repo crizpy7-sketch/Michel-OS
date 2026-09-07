@@ -18,6 +18,41 @@ import assert from 'node:assert/strict';
 import { call, joinHousehold, registerOwner, startHarness, tokenFrom, type Harness } from './harness.ts';
 
 const NOW = '2026-09-07T12:00:00.000Z';
+const RELEASE_SHA = 'ABCDEF0123456789ABCDEF0123456789ABCDEF01';
+
+test('readiness preserves database semantics and exposes only exact normalized release provenance', async (t) => {
+  const h = await startHarness({ now: NOW, releaseSha: RELEASE_SHA });
+  t.after(() => h.close());
+
+  const response = await call<{ ready: boolean; releaseSha: string }>(h, '/api/ready');
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, {
+    ready: true,
+    releaseSha: RELEASE_SHA.toLowerCase(),
+  });
+  assert.deepEqual(Object.keys(response.body).sort(), ['ready', 'releaseSha']);
+  assert.doesNotMatch(JSON.stringify(response.body), /DATABASE_URL|postgres|password|token|secret/i);
+});
+
+test('invalid release provenance is omitted instead of being trusted', async (t) => {
+  const h = await startHarness({ now: NOW, releaseSha: 'main-not-a-git-sha' });
+  t.after(() => h.close());
+
+  const response = await call<{ ready: boolean; releaseSha?: string }>(h, '/api/ready');
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body, { ready: true });
+  assert.equal(response.body.releaseSha, undefined);
+});
+
+test('release provenance never masks a failed database readiness check', async (t) => {
+  const h = await startHarness({ now: NOW, releaseSha: RELEASE_SHA, readinessDbFailure: true });
+  t.after(() => h.close());
+
+  const response = await call<{ error: { code: string }; releaseSha?: string }>(h, '/api/ready');
+  assert.equal(response.status, 503);
+  assert.equal(response.body.error.code, 'not_ready');
+  assert.equal(response.body.releaseSha, undefined);
+});
 
 /* ================================================================ session */
 

@@ -107,7 +107,7 @@ const formatterCache = new Map<string, Intl.DateTimeFormat | null>();
 function getZoneFormatter(timeZone: string): Intl.DateTimeFormat | null {
   const cached = formatterCache.get(timeZone);
   if (cached !== undefined) return cached;
-  let formatter: Intl.DateTimeFormat | null = null;
+  let formatter: Intl.DateTimeFormat | null;
   try {
     formatter = new Intl.DateTimeFormat('en-US', {
       timeZone,

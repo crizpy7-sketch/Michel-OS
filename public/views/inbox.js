@@ -8,7 +8,7 @@ export async function render(mount) { await load(mount); }
 async function load(mount) {
   await withStates(mount, 'list', () => api.get(`/api/households/${state.household.id}/inbox`),
     (data) => h('div', {},
-      state.can('event.create') ? capture(mount) : null,
+      state.can('event.create') ? capture() : null,
       (data.items ?? []).length === 0
         ? empty({ title: 'Inbox is empty', body: 'Drop a thought here and Michel OS will classify it without silently changing your calendar.' })
         : h('div', {}, ...(data.items ?? []).map((item) => card(item.rawText, item.suggestedDomain ? String(item.suggestedDomain).replace(/-/g, ' ') : 'unfiled',
@@ -20,7 +20,7 @@ async function load(mount) {
     ));
 }
 
-function capture(mount) {
+function capture() {
   const text = textarea({ placeholder: 'Example: Mateo has practice Tuesday at 6 PM', required: true, maxlength: 4000 });
   const result = h('div');
   return card('Quick capture', null,
