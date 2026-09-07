@@ -28,7 +28,9 @@ export function getAppearancePreference() {
 
 export function setAppearancePreference(value) {
   const safe = APPEARANCE_OPTIONS.some(([key]) => key === value) ? value : 'auto';
-  try { localStorage.setItem(STORAGE_KEY, safe); } catch {}
+  try { localStorage.setItem(STORAGE_KEY, safe); } catch {
+    // Storage may be unavailable; still apply this preference for the current page.
+  }
   applyAppearance(safe);
 }
 

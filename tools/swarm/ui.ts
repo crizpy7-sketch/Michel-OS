@@ -45,8 +45,13 @@ export function kv(stats: Record<string, string | number> | undefined): string {
 }
 
 export function pad(s: string, width: number): string {
-  // eslint-disable-next-line no-control-regex
-  const visible = s.replace(/\u001b\[\d+m/g, '');
+  // Strip only the existing ESC + [digits+m subset; preserve other sequences.
+  const escape = '\u001b';
+  const visible = s.split(escape).map((part, index) => {
+    if (index === 0) return part;
+    const sequence = /^\[\d+m/.exec(part);
+    return sequence === null ? escape + part : part.slice(sequence[0].length);
+  }).join('');
   return s + ' '.repeat(Math.max(width - visible.length, 0));
 }
 

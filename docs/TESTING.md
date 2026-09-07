@@ -112,3 +112,55 @@ Prior repair history is preserved, including the used 1/1 retention attempt. Thi
 separate lint task grants no automatic post-review repair, merge, VPS, deployment,
 Factory Pages, Shelf admission or Phase 8 permission. Phase 7 stays 1/4 and official
 progress stays 31/41 = 75.61%.
+
+## Separate authorized lint-remediation checkpoint
+
+Cristian subsequently authorized one bounded remediation pass starting at
+`ac2e4ed7070d0782ed447d8ab0a985750b0ea9ac`. The initial lint-enablement history above
+is preserved. [Per-finding dispositions](lint-remediation.json) retain all 31 original
+diagnostics, the assessment and verification mapping. No lint configuration,
+runner, coverage exclusions, dependency lock or CI policy is changed.
+
+The corrections preserve module loading, try/catch assignments, domain result
+identity omission and scoreboard side effects. Intentional best-effort catches
+now explain their behavior. Text validation retains the exact original C0/DEL
+boundary, including the allowed TAB/LF/CR and unchanged C1 behavior. Terminal
+padding retains only the original numeric SGR subset. The existing TAP parser's
+`\\Z` was a literal Z in JavaScript; removing its redundant escape does not change
+it into an end-of-input anchor.
+
+New regressions exercise all 65,536 UTF-16 code units through the actual validator,
+the actual terminal padding export, the actual browser API module and real
+HTTP/database-generated IDs and payloads. The same tests are compared with the
+starting source in a disposable directory. An initial expected-width typo failed
+identically on both implementations; the corrected expected width is five, and
+both original failure logs are retained. This was a test-fixture correction during
+the single initial pass, not an application failure or post-review repair.
+
+Browser modules require isolated browser evidence for network errors, storage
+failure, inbox capture and logout failure/navigation. CI and browser artifacts,
+exact candidate identity, actual Quality verdict and any evidence gaps are
+retained on PR #20; CI simulation is not production proof.
+
+Governance continuity uses the unchanged Factory/BORIS APIs and a distinct new
+task-local ledger. The current explicit authorization is recorded and verified
+after reopening. The missing old temporary database and unavailable historical
+closeout are not reconstructed; old snapshots remain audit evidence only. Prior
+Factory architecture/persistence repair history, the used 1/1 retention repair and
+zero lint-enablement post-review allowance remain unchanged. This new task permits
+zero automatic post-review repairs and no merge/deployment action.
+
+Read-only sharp assessment: the sole explicit importer is
+`tools/assets/icons.ts`, which reads repository artwork to generate/check icon
+derivatives. It is a dev dependency, not called by `npm start`; filename filtering
+does not prove bytes are trusted. The [maintainer advisory](https://github.com/advisories/GHSA-f88m-g3jw-g9cj)
+lists versions before 0.35.0 as affected by inherited libvips vulnerabilities.
+A separately authorized compatible patched 0.35.x update, with locked dependencies
+and icon-output compatibility verification, is the preferred remediation to assess.
+The maintainer also documents decoder blocking, which would change accepted input
+behavior and requires separate approval. No upgrade, decoder change, exploit
+absence claim or risk waiver is made here. Actual npm audit reports remain
+separately retained, including production-only results and observation times.
+
+Phase 7 remains 1/4; Core v2 remains 31/41 = 75.61%. No production operation,
+Factory change/publication, Shelf admission or Phase 8 work is part of this task.

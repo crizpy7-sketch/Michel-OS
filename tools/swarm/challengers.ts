@@ -84,7 +84,7 @@ export const contractIntegrity: Challenger = {
     }
 
     const hash = createHash('sha256').update(source).digest('hex');
-    let locked: string | null = null;
+    let locked: string | null;
     try {
       locked = JSON.parse(await readFile(lockPath, 'utf8')).sha256 as string;
     } catch {
@@ -227,7 +227,7 @@ export const unitTests: Challenger = {
     if (fail > 0) {
       // Each TAP failure is `not ok N - <name>` followed by a YAML block whose
       // `location:` names the source file. Attribute by that, not by guesswork.
-      const blocks = [...out.matchAll(/^\s*not ok \d+ - (.+?)$([\s\S]*?)(?=^\s*(?:not )?ok \d+ - |^1\.\.|\Z)/gm)];
+      const blocks = [...out.matchAll(/^\s*not ok \d+ - (.+?)$([\s\S]*?)(?=^\s*(?:not )?ok \d+ - |^1\.\.|Z)/gm)];
       for (const b of blocks.slice(0, 40)) {
         const name = b[1]!.trim();
         const body = b[2] ?? '';
@@ -427,7 +427,7 @@ function probeChallenger(name: string, hunts: string, spec: string, severity: 'b
   return {
     name,
     hunts,
-    async run(ctx: ChallengeContext): Promise<ChallengeResult> {
+    async run(): Promise<ChallengeResult> {
       const started = now();
       const findings: Finding[] = [];
       let outcome: ProbeOutcome;

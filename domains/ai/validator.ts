@@ -264,8 +264,14 @@ const recurrenceField = (required = false): Field => ({ spec: { t: 'recurrence' 
 
 /* ------------------------------------------------------------ scalar rules */
 
-// C0/C1 control characters (NUL, ESC, DEL...) — never legal in user-facing text.
-const CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+// Preserve the existing set: C0 except TAB/LF/CR, plus DEL. C1 is unchanged.
+function hasControlChars(value: string): boolean {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || code === 127) return true;
+  }
+  return false;
+}
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_:.-]{0,127}$/;
 const INSTANT_RE =
   /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?(Z|z|[+-]\d{2}:\d{2})$/;
@@ -352,7 +358,7 @@ function checkField(path: string, spec: Spec, raw: unknown, push: Push): Checked
         push(issue(path, `Must be at most ${spec.max} characters (received ${value.length}).`, 'range'));
         return FAIL;
       }
-      if (CONTROL_CHARS.test(value)) {
+      if (hasControlChars(value)) {
         push(issue(path, 'Must not contain control characters.', 'format'));
         return FAIL;
       }

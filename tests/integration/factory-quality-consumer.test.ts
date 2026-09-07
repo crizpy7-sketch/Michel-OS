@@ -88,7 +88,8 @@ test('changed criteria or required evidence cannot be substituted even at the sa
 test('stale exact-candidate records and stale receipts cannot certify readiness', async () => {
   const f = await fixture(factory); const good = copy(f.mint());
   const record = f.records.get('test-fixture:unit')!;
-  const { integrityDigest: _, ...rest } = record;
+  const rest: Omit<typeof record, 'integrityDigest'> & { integrityDigest?: string } = { ...record };
+  delete rest.integrityDigest;
   const stale = { ...rest, candidateSha: 'b'.repeat(40) };
   f.records.set(record.sourceId, { ...stale, integrityDigest: factory.admission.trustedRecordDigest(stale) });
   assert.notEqual(consumeStoredFactoryReceipt(factory, good, f.input.candidateSha, f.context).state, 'pass');

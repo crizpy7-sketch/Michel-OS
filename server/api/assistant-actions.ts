@@ -305,7 +305,8 @@ async function executeCommand(
       ...(assignedTo ? { assignedTo } : {}),
     });
     if (!domainResult.ok) return { kind: 'issues', issues: domainResult.issues };
-    const { id: _drop, ...reminder } = domainResult.value;
+    const reminder: Omit<typeof domainResult.value, 'id'> & { id?: string } = { ...domainResult.value };
+    delete reminder.id;
     return { kind: 'executed', result: { entity: 'reminder', item: await repo.insertReminder(tx, reminder) } };
   }
 
@@ -319,7 +320,8 @@ async function executeCommand(
       ...(typeof payload['listName'] === 'string' ? { listName: payload['listName'] } : {}),
     });
     if (!domainResult.ok) return { kind: 'issues', issues: domainResult.issues };
-    const { id: _drop, ...item } = domainResult.value;
+    const item: Omit<typeof domainResult.value, 'id'> & { id?: string } = { ...domainResult.value };
+    delete item.id;
     return { kind: 'executed', result: { entity: 'shopping_item', item: await repo.insertShoppingItem(tx, item) } };
   }
 
@@ -341,7 +343,8 @@ async function executeCommand(
       ...(typeof payload['location'] === 'string' ? { location: payload['location'] } : {}),
     });
     if (!domainResult.ok) return { kind: 'issues', issues: domainResult.issues };
-    const { id: _drop, ...item } = domainResult.value;
+    const item: Omit<typeof domainResult.value, 'id'> & { id?: string } = { ...domainResult.value };
+    delete item.id;
     return { kind: 'executed', result: { entity: 'errand', item: await repo.insertErrand(tx, item) } };
   }
 
@@ -376,7 +379,8 @@ async function executeCommand(
       ...(typeof payload['reason'] === 'string' ? { note: payload['reason'] } : {}),
     });
     if (!domainResult.ok) return { kind: 'issues', issues: domainResult.issues };
-    const { id: _drop, ...movement } = domainResult.value.movement;
+    const movement: Omit<typeof domainResult.value.movement, 'id'> & { id?: string } = { ...domainResult.value.movement };
+    delete movement.id;
     await repo.insertMovement(tx, ctx.actor.household.id, movement);
     const productSaved = await repo.saveProduct(tx, ctx.actor.household.id, domainResult.value.product);
     return { kind: 'executed', result: { entity: 'product', item: productSaved } };
@@ -394,7 +398,8 @@ async function executeCommand(
       description: String(payload['description']),
     });
     if (!domainResult.ok) return { kind: 'issues', issues: domainResult.issues };
-    const { id: _drop, ...expense } = domainResult.value;
+    const expense: Omit<typeof domainResult.value, 'id'> & { id?: string } = { ...domainResult.value };
+    delete expense.id;
     return { kind: 'executed', result: { entity: 'expense', item: await repo.insertExpense(tx, ctx.actor.household.id, expense) } };
   }
 
