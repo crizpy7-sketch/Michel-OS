@@ -23,7 +23,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { isDeepStrictEqual } from 'node:util';
+import { crc32, Inflate, inflateSync } from 'node:zlib';
 
 const SOURCE_DIR = new URL('../../public/icons/', import.meta.url).pathname;
 const OUT_DIR = new URL('../../public/icons/derived/', import.meta.url).pathname;
@@ -85,25 +85,108 @@ export function isPlaceholder(filename: string): boolean {
   return /\.placeholder\.png$/i.test(filename);
 }
 
-/** Keep committed PNGs when an encoder update changes only their compression. */
+const PNG_SIGNATURE = Buffer.from('89504e470d0a1a0a', 'hex');
+const MAX_PNG_BYTES = 2 * 1024 * 1024;
+const MAX_PNG_CHUNKS = 256;
+const MAX_ICON_SIZE = Math.max(...GRID_SIZES, ...PWA_SIZES);
+
+/**
+ * A conservative equivalence fallback for the current derivatives, not an input
+ * decoder: 8-bit indexed, non-interlaced PNGs with unfiltered scanlines only.
+ * Unknown chunks/representations cannot prove compression-only drift. Source
+ * selection and sharp's decoding/generation options remain independent of this.
+ */
+function comparablePng(bytes: Buffer): { nonIdat: Buffer; scanlines: Buffer } | null {
+  if (bytes.length > MAX_PNG_BYTES || !bytes.subarray(0, 8).equals(PNG_SIGNATURE)) return null;
+  const nonIdat: Buffer[] = [];
+  const idat: Buffer[] = [];
+  const seen = new Set<string>();
+  let width = 0;
+  let height = 0;
+  let paletteEntries = 0;
+  let chunks = 0;
+  let ended = false;
+  for (let offset = 8; offset < bytes.length;) {
+    if (++chunks > MAX_PNG_CHUNKS || bytes.length - offset < 12) return null;
+    const length = bytes.readUInt32BE(offset);
+    if (length > bytes.length - offset - 12) return null;
+    const end = offset + 12 + length;
+    // latin1 preserves high bits, so malformed type bytes cannot alias ASCII.
+    const kind = bytes.toString('latin1', offset + 4, offset + 8);
+    const data = bytes.subarray(offset + 8, end - 4);
+    if (crc32(bytes.subarray(offset + 4, end - 4)) !== bytes.readUInt32BE(end - 4)) return null;
+    if (chunks === 1 && kind !== 'IHDR') return null;
+    if (kind !== 'IDAT') {
+      if (seen.has(kind)) return null;
+      seen.add(kind);
+      nonIdat.push(bytes.subarray(offset, end));
+    }
+    switch (kind) {
+      case 'IHDR':
+        if (chunks !== 1 || length !== 13) return null;
+        width = data.readUInt32BE(0);
+        height = data.readUInt32BE(4);
+        if (width === 0 || height === 0 || width > MAX_ICON_SIZE || height > MAX_ICON_SIZE
+          || data[8] !== 8 || data[9] !== 3 || data[10] !== 0 || data[11] !== 0 || data[12] !== 0) return null;
+        break;
+      case 'PLTE':
+        if (idat.length > 0 || length === 0 || length > 768 || length % 3 !== 0) return null;
+        paletteEntries = length / 3;
+        break;
+      case 'tRNS':
+        if (idat.length > 0 || paletteEntries === 0 || length === 0 || length > paletteEntries) return null;
+        break;
+      case 'pHYs':
+        if (idat.length > 0 || length !== 9 || data.readUInt32BE(0) === 0 || data.readUInt32BE(4) === 0
+          || data.readUInt32BE(0) > 0x7fffffff || data.readUInt32BE(4) > 0x7fffffff
+          || (data[8] !== 0 && data[8] !== 1)) return null;
+        break;
+      case 'gAMA':
+        if (paletteEntries > 0 || idat.length > 0 || length !== 4
+          || data.readUInt32BE(0) === 0 || data.readUInt32BE(0) > 0x7fffffff) return null;
+        break;
+      case 'IDAT':
+        if (paletteEntries === 0) return null;
+        idat.push(data);
+        break;
+      case 'IEND':
+        if (length !== 0 || idat.length === 0 || end !== bytes.length) return null;
+        ended = true;
+        break;
+      default:
+        return null;
+    }
+    // All supported chunks except IEND must precede IDAT. Thus the IDAT run
+    // above is necessarily consecutive, and IEND consumes the complete file.
+    offset = end;
+  }
+  if (!ended) return null;
+  const compressed = Buffer.concat(idat);
+  const expectedLength = (width + 1) * height;
+  // Default Z_FINISH checks stream completion and Adler-32. The consumed byte
+  // count additionally rejects trailing garbage or a second zlib stream.
+  const inflated: unknown = inflateSync(compressed, { info: true, maxOutputLength: expectedLength });
+  if (typeof inflated !== 'object' || inflated === null
+    || !('buffer' in inflated) || !Buffer.isBuffer(inflated.buffer)
+    || !('engine' in inflated) || !(inflated.engine instanceof Inflate)
+    || inflated.engine.bytesWritten !== compressed.length || inflated.buffer.length !== expectedLength) return null;
+  const scanlines = inflated.buffer;
+  for (let offset = 0; offset < scanlines.length; offset += width + 1) {
+    if (scanlines[offset] !== 0
+      || scanlines.subarray(offset + 1, offset + width + 1).some(index => index >= paletteEntries)) return null;
+  }
+  return { nonIdat: Buffer.concat(nonIdat), scanlines };
+}
+
+/** Keep committed PNGs only when complete validated data proves compression-only drift. */
 export async function samePngContent(existing: Buffer, next: Buffer): Promise<boolean> {
-  const sharp = (await import('sharp')).default;
   try {
-    const before = sharp(existing);
-    const after = sharp(next);
-    const [beforeMetadata, afterMetadata] = await Promise.all([before.metadata(), after.metadata()]);
-    if (beforeMetadata.format !== 'png' || afterMetadata.format !== 'png') return false;
-    // Encoded length can change. Dimensions, colour/alpha information, profiles,
-    // orientation, frame information and all other exposed metadata must agree.
-    delete beforeMetadata.size;
-    delete afterMetadata.size;
-    if (!isDeepStrictEqual(beforeMetadata, afterMetadata)) return false;
-    const [beforePixels, afterPixels] = await Promise.all([
-      before.ensureAlpha().raw().toBuffer(), after.ensureAlpha().raw().toBuffer(),
-    ]);
-    return beforePixels.equals(afterPixels);
+    const before = comparablePng(existing);
+    const after = comparablePng(next);
+    return before !== null && after !== null
+      && before.nonIdat.equals(after.nonIdat) && before.scanlines.equals(after.scanlines);
   } catch {
-    // An unreadable derivative is drift; --check must report it without writing.
+    // Malformed/unsupported data is drift; --check must report it without writing.
     return false;
   }
 }

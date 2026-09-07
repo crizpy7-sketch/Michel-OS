@@ -46,20 +46,49 @@ identical. All 65 WebP files are byte identical. Fourteen PNGs differ only in
 compressed IDAT bytes: their inflated scanlines and every other PNG chunk match.
 These are the thirteen 88-pixel PNGs and the 512-pixel `shia-baby` PNG.
 
-The compatibility helper retains existing PNG bytes only when all sharp-exposed
-metadata except encoded size agrees and decoded RGBA bytes match exactly. It
-reports these encoding differences explicitly. Different pixels, alpha, dimensions,
-metadata, formats or unreadable derivatives still count as drift. WebP and manifest
-checks remain byte comparisons. Neither source artwork nor committed derivatives
-are replaced. This avoids changing immutable URLs merely to accommodate a new
-compression library.
+The initial metadata/RGBA compatibility helper was rejected by independent review
+(P2 SR-REVIEW-1): a valid added gAMA chunk was invisible to that comparison, and
+the actual CLI incorrectly accepted the altered derivative. The original
+[request-changes report](https://github.com/crizpy7-sketch/Michel-OS/pull/20#issuecomment-5573327213)
+and [sharp stop](https://github.com/crizpy7-sketch/Michel-OS/pull/20#issuecomment-5573411917)
+remain historical evidence; they are not relabeled as passing.
 
-`tests/integration/icon-tool.test.ts` exercises an independently recompressed PNG,
-pixel/alpha/geometry/metadata/format/decode differences, and the actual CLI using
-existing artwork and derivatives in a disposable directory. It verifies that both
-generation and checking retain compatible bytes, and that a failed check leaves
-damaged image/manifest files untouched. It runs through the existing full test
-suite and gauntlet without workflow changes.
+The separately [authorized PNG repair](https://github.com/crizpy7-sketch/Michel-OS/pull/20#issuecomment-5573663453)
+starts at `98772eda83a02519207847056f8a91ec309cbebe`, tree
+`2f4bb3f2d9265a2868704731dadbb79b3f3b2f34`. It consumes one additional post-review
+repair attempt, preserving the sharp implementation pass as 1/1 used and all
+earlier budgets. There are zero automatic subsequent repairs. Its distinct actual
+ledger links the sharp stop and unchanged prior ledger; it does not reconstruct
+historical approvals or reset the old task.
+
+The corrected helper requires byte-identical ordered non-IDAT chunks and identical
+complete inflated IDAT scanlines. It validates the signature, chunk lengths/CRCs,
+required chunks, singleton/order rules, palette/transparency/gamma/density fields,
+image layout, scanline filters and palette indices. zlib completion and Adler-32
+must validate, all compressed bytes must be consumed, and the inflated length must
+match exactly. The [PNG specification](https://www.w3.org/TR/png-3/#5DataRep)
+defines the structure; [Node's zlib API](https://nodejs.org/docs/latest-v22.x/api/zlib.html)
+provides bounded inflation and consumed-byte evidence.
+
+This conservative equivalence fallback supports the current derivative layout:
+8-bit indexed, non-interlaced PNG, filter-0 scanlines, dimensions at most 512×512,
+at most 2 MiB and 256 chunks, with IHDR/PLTE/IDAT/IEND and optional tRNS/pHYs/gAMA.
+Unknown chunks, other layouts, ambiguous data or validation failure do not prove
+equivalence. This is a limit on compression-only acceptance, not a change to
+sharp's source decoder or accepted source selection. The generation options,
+sharp 0.35.4, dependency lock, source artwork, committed derivatives, manifest,
+WebP byte comparisons and deployment safeguards remain unchanged.
+
+The same valid gamma regression fails against the predecessor's exported helper
+and actual CLI, and passes with the correction. Added, changed and removed gamma
+are rejected; unchanged valid gamma with independently recompressed IDAT remains
+accepted. CLI checks of valid gamma drift exit 1 and leave all output bytes
+untouched. Tests also retain pixel, alpha, geometry, metadata, format and decode
+controls, a compression-only positive control split across IDAT chunks, and
+malformed/unsupported structure, checksum, stream-completion and resource-limit
+cases. All tests use the actual exported helper and CLI in disposable directories.
+All thirteen source images must also pass isolated generation/checking with the
+committed outputs retained byte-for-byte; evidence is recorded at the stop.
 
 Task evidence is retained on PR #20 and in the task's ignored evidence directory:
 full/production audits, dependency records, loaded versions, command stdout/stderr
