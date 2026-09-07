@@ -1,5 +1,10 @@
 # Michel OS verification and lint evidence
 
+This file retains the lint-enablement and lint-remediation checkpoints below.
+The separately authorized sharp update and its current audit/compatibility evidence
+are documented in [sharp-remediation.md](sharp-remediation.md); earlier sharp audit
+findings here describe the retained baseline.
+
 This bounded Phase 7 task enables lint; it does not repair application findings,
 grant deployment authority, or complete the production lifecycle.
 

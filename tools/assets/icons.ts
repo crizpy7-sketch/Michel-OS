@@ -23,6 +23,7 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 
 const SOURCE_DIR = new URL('../../public/icons/', import.meta.url).pathname;
 const OUT_DIR = new URL('../../public/icons/derived/', import.meta.url).pathname;
@@ -84,6 +85,29 @@ export function isPlaceholder(filename: string): boolean {
   return /\.placeholder\.png$/i.test(filename);
 }
 
+/** Keep committed PNGs when an encoder update changes only their compression. */
+export async function samePngContent(existing: Buffer, next: Buffer): Promise<boolean> {
+  const sharp = (await import('sharp')).default;
+  try {
+    const before = sharp(existing);
+    const after = sharp(next);
+    const [beforeMetadata, afterMetadata] = await Promise.all([before.metadata(), after.metadata()]);
+    if (beforeMetadata.format !== 'png' || afterMetadata.format !== 'png') return false;
+    // Encoded length can change. Dimensions, colour/alpha information, profiles,
+    // orientation, frame information and all other exposed metadata must agree.
+    delete beforeMetadata.size;
+    delete afterMetadata.size;
+    if (!isDeepStrictEqual(beforeMetadata, afterMetadata)) return false;
+    const [beforePixels, afterPixels] = await Promise.all([
+      before.ensureAlpha().raw().toBuffer(), after.ensureAlpha().raw().toBuffer(),
+    ]);
+    return beforePixels.equals(afterPixels);
+  } catch {
+    // An unreadable derivative is drift; --check must report it without writing.
+    return false;
+  }
+}
+
 async function run(): Promise<void> {
   const check = process.argv.includes('--check');
   await mkdir(OUT_DIR, { recursive: true });
@@ -96,6 +120,7 @@ async function run(): Promise<void> {
 
   const icons: IconRecord[] = [];
   let written = 0;
+  let encodingOnly = 0;
 
   for (const filename of sources) {
     const key = keyOf(filename);
@@ -119,6 +144,10 @@ async function run(): Promise<void> {
         const next = await target.make();
         const existing = await readFile(target.path).catch(() => null);
         if (existing !== null && existing.equals(next)) continue;
+        if (existing !== null && target.path.endsWith('.png') && await samePngContent(existing, next)) {
+          encodingOnly += 1;
+          continue;
+        }
         if (check) {
           console.error(`[icons] out of date: ${target.path}`);
           process.exitCode = 1;
@@ -164,6 +193,9 @@ async function run(): Promise<void> {
   const placeholders = icons.filter((i) => i.placeholder).map((i) => i.key);
   const provisional = icons.filter((i) => i.provisional).map((i) => i.key);
   console.log(`[icons] ${icons.length} icons, ${written} file(s) written`);
+  if (encodingOnly > 0) {
+    console.log(`[icons] ${encodingOnly} PNG file(s) differ only in encoding; existing files retained`);
+  }
   // Loud on purpose: ASSET_MAP.md says neither of these may ship silently as
   // final artwork, and a note in a document nobody opens is silent.
   if (placeholders.length > 0) {
